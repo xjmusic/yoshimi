@@ -153,21 +153,22 @@ void cmdIfaceCommandLoop()
         sprintf(welcomeBuffer, "yoshimi [%d]> ", currentInstance);
         
         cCmd = readline(welcomeBuffer);
-        string sCmd = cCmd;
-        if (sCmd == "exit")
-            exit = true;
-        if(!sCmd.empty())
+        if (cCmd) // this won't exist with a gui launch
         {
-            vector<string> vArgs;
-            istringstream iss(sCmd);
-            copy(istream_iterator<string>(iss), istream_iterator<string>(), back_inserter(vArgs));
-            sCmd = vArgs [0];
-            vArgs.erase(vArgs.begin());
-            exit = cmdIfaceProcessCommand(sCmd, vArgs);
-        }
-        if(cCmd)
-        {
-            free(cCmd);
+            string sCmd = cCmd;
+            if (sCmd == "exit")
+                exit = true;
+            if(!sCmd.empty())
+            {
+                vector<string> vArgs;
+                istringstream iss(sCmd);
+                copy(istream_iterator<string>(iss), istream_iterator<string>(),     back_inserter(vArgs));
+                sCmd = vArgs [0];
+                vArgs.erase(vArgs.begin());
+                exit = cmdIfaceProcessCommand(sCmd, vArgs);
+                free(cCmd);
+                cCmd = NULL;
+            }
         }
     }
 }
