@@ -1,14 +1,15 @@
-#include <Misc/SynthEngine.h>
-#include <Misc/MiscFuncs.h>
-#include <readline/readline.h>
-#include <readline/history.h>
-#include <string>
 #include <iostream>
+#include <string>
+#include <unistd.h>
 #include <algorithm>
 #include <iterator>
 #include <map>
 #include <list>
 #include <sstream>
+#include <Misc/SynthEngine.h>
+#include <Misc/MiscFuncs.h>
+#include <readline/readline.h>
+#include <readline/history.h>
 
 using namespace std;
 
@@ -160,6 +161,7 @@ void cmdIfaceCommandLoop()
                 exit = true;
             if(!sCmd.empty())
             {
+                add_history(cCmd);
                 vector<string> vArgs;
                 istringstream iss(sCmd);
                 copy(istream_iterator<string>(iss), istream_iterator<string>(),     back_inserter(vArgs));
@@ -170,5 +172,7 @@ void cmdIfaceCommandLoop()
                 cCmd = NULL;
             }
         }
+        else
+            usleep(20000);
     }
 }
