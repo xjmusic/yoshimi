@@ -169,6 +169,9 @@ class Config : public MiscFuncs
         list<string> LogList;
         BodyDisposal *deadObjects;
 
+        void nsmSave(string savefile);
+        bool nsmRestore(string savefile);
+
     private:
         void loadCmdArgs(int argc, char **argv);
         bool loadConfig(void);
