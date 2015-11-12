@@ -55,7 +55,6 @@ using namespace std;
 #include "MasterUI.h"
 
 extern void mainRegisterAudioPort(SynthEngine *s, int portnum);
-
 const unsigned short Config::MaxParamsHistory = 25;
 
 static char prog_doc[] =
@@ -131,6 +130,7 @@ Config::Config(SynthEngine *_synth, int argc, char **argv) :
     nrpnL(127),
     nrpnH(127),
     nrpnActive(false),
+
     deadObjects(NULL),
     nextHistoryIndex(numeric_limits<unsigned int>::max()),
     sigIntActive(0),
@@ -149,7 +149,7 @@ Config::Config(SynthEngine *_synth, int argc, char **argv) :
     //which befaves exactly the same when flag FE_TOWARDZERO is set
 
     cerr.precision(4);
-    deadObjects = new BodyDisposal();
+    deadObjects = new BodyDisposal();    
     bRuntimeSetupCompleted = Setup(argc, argv);
 }
 
@@ -511,7 +511,7 @@ bool Config::extractConfigData(XMLwrapper *xml)
             ++ i;
         }
     }
-
+    
     // alsa settings
     alsaAudioDevice = xml->getparstr("linux_alsa_audio_dev");
     alsaMidiDevice = xml->getparstr("linux_alsa_midi_dev");
@@ -581,7 +581,6 @@ void Config::addConfigXML(XMLwrapper *xmltree)
 {
     xmltree->beginbranch("CONFIGURATION");
 
-    xmltree->addparstr("state_file", StateFile);
     xmltree->addpar("sample_rate", Samplerate);
     xmltree->addpar("sound_buffer_size", Buffersize);
     xmltree->addpar("oscil_size", Oscilsize);
@@ -602,6 +601,7 @@ void Config::addConfigXML(XMLwrapper *xmltree)
             xmltree->addparstr("presets_root", presetsDirlist[i]);
             xmltree->endbranch();
         }
+
     xmltree->addpar("interpolation", Interpolation);
 
     xmltree->addparstr("linux_alsa_audio_dev", alsaAudioDevice);
@@ -636,6 +636,9 @@ void Config::addConfigXML(XMLwrapper *xmltree)
 
 void Config::saveSessionData(string savefile)
 {
+    string ext = ".state";
+    if (savefile.rfind(ext) != (savefile.length() - 6))
+        savefile += ext;
     synth->getRuntime().xmlType = XML_STATE;
     XMLwrapper *xmltree = new XMLwrapper(synth);
     if (!xmltree)
@@ -657,6 +660,8 @@ bool Config::restoreSessionData(string sessionfile)
 {
     XMLwrapper *xml = NULL;
     bool ok = false;
+    if (sessionfile.size() && !isRegFile(sessionfile))
+        sessionfile += ".state";
     if (!sessionfile.size() || !isRegFile(sessionfile))
     {
         Log("Session file " + sessionfile + " not available", true);
@@ -1181,6 +1186,16 @@ void GuiThreadMsg::processGuiMessages()
             if(guiMaster)
             {
                 guiMaster->configui->update_config(msg->index);
+            }
+        }
+            break;
+        case GuiThreadMsg::UpdatePaths:
+        {
+            SynthEngine *synth = ((SynthEngine *)msg->data);
+            MasterUI *guiMaster = synth->getGuiMaster(false);
+            if(guiMaster)
+            {
+                guiMaster->updatepaths(msg->index);
             }
         }
             break;

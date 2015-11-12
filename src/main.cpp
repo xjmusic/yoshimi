@@ -256,6 +256,7 @@ static void *mainGuiThread(void *arg)
         else
             usleep(33333);
     }
+    
     return NULL;
 }
 
@@ -464,7 +465,6 @@ int main(int argc, char *argv[])
     {
         goto bail_out;
     }
-
     cout << "\nGoodbye - Play again soon?\n";
     bExitSuccess = true;
 

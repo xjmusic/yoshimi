@@ -1,6 +1,5 @@
 
-Make command line adding and removing root paths update gui.
-Check other command/gui updates.
+Check command/gui updates.
 
 Make loading effect presets update the 'top' line.
 
@@ -9,7 +8,7 @@ Sort out default state save/load
 Sort out default midi message.
 
 startup state load doesn't set buffersize correctly - why?
-    size is ignored if loaded when already running which is reasonable.
+    size is ignored if loaded when already running (which is reasonable).
 
 save part [n1] program <[n2] [s]>
 if 'n2' is present it saves to a bank slot and 's' optionally changes the name
