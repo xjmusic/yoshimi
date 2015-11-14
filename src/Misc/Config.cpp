@@ -71,7 +71,6 @@ static struct argp_option cmd_options[] = {
     {"alsa-midi",         'a',  "<device>",   1,  "use alsa midi input" },
     {"define-root",       'D',  "<path>",     0,  "define path to new bank root"},
     {"buffersize",        'b',  "<size>",     0,  "set internal buffer size" },
-    {"show-console",      'c',  NULL,         0,  "show console on startup" },
     {"no-gui",            'i',  NULL,         0,  "no gui"},
     {"jack-audio",        'J',  "<server>",   1,  "use jack audio output" },
     {"jack-midi",         'j',  "<device>",   1,  "use jack midi input" },
@@ -99,7 +98,6 @@ Config::Config(SynthEngine *_synth, int argc, char **argv) :
     Oscilsize(512),
     runSynth(true),
     showGui(true),
-    showConsole(false),
     VirKeybLayout(1),
     audioEngine(DEFAULT_AUDIO),
     midiEngine(DEFAULT_MIDI),
@@ -397,7 +395,7 @@ bool Config::loadConfig(void)
     string homedir = string(getenv("HOME"));
     if (homedir.empty() || !isDirectory(homedir))
         homedir = string("/tmp");
-    ConfigDir = homedir + string("/.config/yoshimi");
+    ConfigDir = homedir + string("/.config/") + programcommand;
     if (!isDirectory(ConfigDir))
     {
         cmd = string("mkdir -p ") + ConfigDir;
@@ -407,6 +405,9 @@ bool Config::loadConfig(void)
             return false;
         }
     }
+    string yoshimi = "/" + programcommand;
+    if (synth->getUniqueId() > 0)
+        yoshimi += ("-" + asString(synth->getUniqueId()));
     string presetDir = ConfigDir + "/presets";
     if (!isDirectory(presetDir))
     {
@@ -414,13 +415,9 @@ bool Config::loadConfig(void)
         if ((chk = system(cmd.c_str())) < 0)
             Log("Create preset directory " + presetDir + " failed, status " + asString(chk));
     }
-    ConfigFile = ConfigDir + string("/yoshimi.config");
-    StateFile = ConfigDir + string("/yoshimi.state");
+    ConfigFile = ConfigDir + yoshimi + string(".config");
+    StateFile = ConfigDir + yoshimi + string(".state");
     string resConfigFile = ConfigFile;
-    if(synth->getUniqueId() > 0)
-    {
-        resConfigFile += asString(synth->getUniqueId());
-    }
 
     bool isok = true;
     if (!isRegFile(resConfigFile) && !isRegFile(ConfigFile))
@@ -466,7 +463,7 @@ bool Config::extractConfigData(XMLwrapper *xml)
         return false;
     }
     Samplerate = xml->getpar("sample_rate", Samplerate, 44100, 96000);
-    Buffersize = xml->getpar("sound_buffer_size", Buffersize, 32, 1024);
+    Buffersize = xml->getpar("sound_buffer_size", Buffersize, 16, 1024);
     Oscilsize = xml->getpar("oscil_size", Oscilsize,
                                         MAX_AD_HARMONICS * 2, 131072);
     GzipCompression = xml->getpar("gzip_compression", GzipCompression, 0, 9);
@@ -563,10 +560,7 @@ void Config::saveConfig(void)
     GzipCompression = 0;
 
     string resConfigFile = ConfigFile;
-    if(synth->getUniqueId() > 0)
-    {
-        resConfigFile += asString(synth->getUniqueId());
-    }
+
     if (!xmltree->saveXMLfile(resConfigFile))
     {
         Log("Failed to save config to " + resConfigFile);
@@ -1032,7 +1026,6 @@ static error_t parse_cmds (int key, char *arg, struct argp_state *state)
 
     switch (key)
     {
-        case 'c': settings->showConsole = true; break;
         case 'N': settings->nameTag = string(arg); break;
         case 'l': settings->paramsLoad = string(arg); break;
         case 'L': settings->instrumentLoad = string(arg); break;
@@ -1060,8 +1053,10 @@ static error_t parse_cmds (int key, char *arg, struct argp_state *state)
                 num = 128;
             else if (num >= 64)
                 num = 64;
-            else
+            else if (num >= 32)
                 num = 32;
+            else
+                num = 16;
             settings->Buffersize = num;
             break;
         case 'D':
@@ -1070,7 +1065,6 @@ static error_t parse_cmds (int key, char *arg, struct argp_state *state)
             break;
         case 'i':
             settings->showGui = false;
-            settings->showConsole = false;
             break;
         case 'J':
             settings->audioEngine = jack_audio;
