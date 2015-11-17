@@ -239,15 +239,15 @@ class MasterUI {selected : {private MiscFuncs}
                   synth->getRuntime().saveConfig();
                   synth->guiClosed(true);
           }}
-      xywh {4 20 385 465} type Double labelfont 13 labelsize 12 hide xclass Yoshimi
+      xywh {4 48 385 465} type Double labelfont 13 labelsize 12 hide xclass Yoshimi
     } {
-      Fl_Menu_Bar mastermenu {open
-        xywh {-4 0 400 25} labelsize 13
+      Fl_Menu_Bar mastermenu {
+        xywh {-7 0 400 25} labelsize 13
         code0 {if (synth->getRuntime().audioEngine != jack_audio){newinstance->deactivate(); newinstanceid->deactivate();}}
       } {
         Submenu {} {
           label {&Yoshimi}
-          xywh {0 0 100 20} labelsize 12
+          xywh {0 0 96 20} labelsize 12
         } {
           MenuItem {} {
             label {&About...}
@@ -288,7 +288,7 @@ mainCreateNewInstance(forceId);}
           }
         }
         Submenu {} {
-          label {&Instrument}
+          label {&Instruments}
           xywh {10 10 100 20} labelsize 12
         } {
           MenuItem {} {
@@ -395,7 +395,7 @@ paramsui->Show();}
         }
         Submenu {} {
           label {Pat&hs}
-          xywh {0 0 70 20} labelsize 12
+          xywh {0 0 65 20} labelsize 12
         } {
           MenuItem {} {
             label {&Bank Root Dirs...}
@@ -410,7 +410,7 @@ paramsui->Show();}
         }
         Submenu Scales {
           label {&Scales}
-          tooltip {Clear all parameters to default settings} xywh {0 0 70 21} labelsize 12
+          tooltip {Clear all parameters to default settings} xywh {0 0 65 21} labelsize 12
         } {
           MenuItem {} {
             label {&Show Settings...}
@@ -475,7 +475,7 @@ paramsui->Show();}
         }
         Submenu {} {
           label {S&tate}
-          xywh {0 0 70 21} labelsize 12
+          xywh {0 0 65 21} labelsize 12
         } {
           MenuItem loadState {
             label {Load...}
@@ -1383,7 +1383,10 @@ updatepanel();}
   Function {setPartWindowTitle(string prefix)} {return_type string
   } {
     code {//
-    return synth->makeUniqueName(prefix + " - Part " + asString(partui->npart + 1) + " " + partui->part->Pname);} {}
+    string extension = " - Part " + asString(partui->npart + 1) + " " + partui->part->Pname;
+    if (partui->part->Pkitmode)
+        extension += ", Kit ";
+    return synth->makeUniqueName(prefix + extension);} {}
   }
   Function {setPartVolWidget(int _npart, float _value)} {} {
     code {//
@@ -1522,6 +1525,22 @@ updatepanel();}
                  partfxY,
                  partfxO);
 
+    ok = getData(ok,
+                "SUBnote",
+                 subNoteX,
+                 subNoteY,
+                 subNoteO);
+    ok = getData(ok,
+                "PADnote",
+                 padNoteX,
+                 padNoteY,
+                 padNoteO);
+    ok = getData(ok,
+                "ADDnote",
+                 addNoteX,
+                 addNoteY,
+                 addNoteO);
+
    if (windows != NULL)
         fclose(windows);
         
@@ -1540,8 +1559,7 @@ updatepanel();}
     partui->instrumentkitlist->position(kitlistX, kitlistY);
     partui->partfx->position(partfxX, partfxY);} {}
   }
-  Function {saveWindowData()} {open
-  } {
+  Function {saveWindowData()} {} {
     code {//
     windows = fopen(filename.c_str(), "w");
 
@@ -1588,27 +1606,61 @@ updatepanel();}
 
     if (partui->ctlwindow->x()) // this works, visible() doesn't :(
     	putData("controllers",
-             	partui->ctlwindow->x(),
-             	partui->ctlwindow->y(),
-             	partui->ctlwindow->visible());
+                 partui->ctlwindow->x(),
+                 partui->ctlwindow->y(),
+                 partui->ctlwindow->visible());
     else // no window so store previous values
         putData("controllers",
                  controllersX,
                  controllersY,
                  controllersO);
 
-    putData("instrumentedit",
-             partui->instrumenteditwindow->x(),
-             partui->instrumenteditwindow->y(),
-             partui->instrumenteditwindow->visible());
-    putData("kitlist",
-             partui->instrumentkitlist->x(),
-             partui->instrumentkitlist->y(),
-             partui->instrumentkitlist->visible());
-    putData("partFX",
-             partui->partfx->x(),
-             partui->partfx->y(),
-             partui->partfx->visible());
+    if (partui->instrumenteditwindow->x())
+        putData("instrumentedit",
+                 partui->instrumenteditwindow->x(),
+                 partui->instrumenteditwindow->y(),
+                 partui->instrumenteditwindow->visible());
+    else
+        putData("instrumentedit",
+                 inseditX,
+                 inseditY,
+                 inseditO);
+
+    if (partui->instrumentkitlist->x()) 
+        putData("kitlist",
+                 partui->instrumentkitlist->x(),
+                 partui->instrumentkitlist->y(),
+                 partui->instrumentkitlist->visible());
+    else
+        putData("kitlist",
+                 kitlistX,
+                 kitlistY,
+                 kitlistO);
+
+    if(partui->partfx->x())
+        putData("partFX",
+                 partui->partfx->x(),
+                 partui->partfx->y(),
+                 partui->partfx->visible());
+    else
+        putData("partFX",
+                 partfxX,
+                 partfxY,
+                 partfxO);
+ 
+    putData("SUBnote",
+             subNoteX,
+             subNoteY,
+             subNoteO);
+    putData("PADnote",
+             padNoteX,
+             padNoteY,
+             padNoteO);
+             
+    putData("ADDnote",
+             addNoteX,
+             addNoteY,
+             addNoteO);
 
     fclose(windows);} {}
   }
@@ -1764,5 +1816,23 @@ updatepanel();}
   decl {int partfxY;} {private local
   }
   decl {int partfxO;} {private local
+  }
+  decl {int subNoteX;} {public local
+  }
+  decl {int subNoteY;} {public local
+  }
+  decl {int subNoteO;} {public local
+  }
+  decl {int padNoteX;} {public local
+  }
+  decl {int padNoteY;} {public local
+  }
+  decl {int padNoteO;} {public local
+  }
+  decl {int addNoteX;} {public local
+  }
+  decl {int addNoteY;} {public local
+  }
+  decl {int addNoteO;} {public local
   }
 } 
