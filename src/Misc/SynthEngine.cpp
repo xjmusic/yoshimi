@@ -97,6 +97,7 @@ SynthEngine::SynthEngine(int argc, char **argv, bool _isLV2Plugin, unsigned int 
     tmpmixr(NULL),
     processLock(NULL),
     vuringbuf(NULL),
+    guiringbuf(NULL),
     stateXMLtree(NULL),
     guiMaster(NULL),
     guiClosedCallback(NULL),
@@ -126,6 +127,8 @@ SynthEngine::~SynthEngine()
     closeGui();
     if (vuringbuf)
         jack_ringbuffer_free(vuringbuf);
+    if (guiringbuf)
+        jack_ringbuffer_free(guiringbuf);
     
     for (int npart = 0; npart < NUM_MIDI_PARTS; ++npart)
         if (part[npart])
@@ -201,6 +204,12 @@ bool SynthEngine::Init(unsigned int audiosrate, int audiobufsize)
     if (!(vuringbuf = jack_ringbuffer_create(sizeof(VUtransfer))))
     {
         Runtime.Log("SynthEngine failed to create vu ringbuffer");
+        goto bail_out;
+    }
+
+    if (!(guiringbuf = jack_ringbuffer_create(256)))
+    {
+        Runtime.Log("SynthEngine failed to create GUI ringbuffer");
         goto bail_out;
     }
 
@@ -311,6 +320,10 @@ bail_out:
     if (vuringbuf)
         jack_ringbuffer_free(vuringbuf);
     vuringbuf = NULL;
+    
+    if (guiringbuf)
+        jack_ringbuffer_free(guiringbuf);
+    guiringbuf = NULL;
 
     if (tmpmixl)
         fftwf_free(tmpmixl);
@@ -426,9 +439,9 @@ void SynthEngine::SetController(unsigned char chan, int type, short int par)
                 {
                     part[npart]->SetController(type, par);
                     if (type == 7 || type == 10) // currently only volume and pan
-                    {
+                    //    writeGuiData(npart | 128);
                         GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePanelItem, npart);
-                    }
+                     
                 }
             }
         }
@@ -439,9 +452,8 @@ void SynthEngine::SetController(unsigned char chan, int type, short int par)
             {
                 part[npart]->SetController(type, par);
                 if (type == 7 || type == 10) // currently only volume and pan
-                {
+                //    writeGuiData(npart | 128);
                     GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePanelItem, npart);
-                }
             }
         }
         if (type == C_allsoundsoff)
@@ -535,7 +547,7 @@ void SynthEngine::SetBank(int banknum)
     //new implementation uses only 1 call :)
     if (bank.setCurrentBankID(banknum, true))
     {
-        if (Runtime.showGui && guiMaster && guiMaster->bankui)
+        if (Runtime.showGui && guiMaster && guiMaster && guiMaster->bankui)
         {
             guiMaster->bankui->set_bank_slot();
             guiMaster->bankui->refreshmainwindow();
@@ -571,12 +583,11 @@ void SynthEngine::SetProgram(unsigned char chan, unsigned short pgm)
                         partOK = true; 
                         if (part[npart]->Penabled == 0 && Runtime.enable_part_on_voice_load != 0)
                             partonoff(npart, 1);
+                        //writeGuiData(npart | 64);
                         if (Runtime.showGui && guiMaster && guiMaster->partui
                                             && guiMaster->partui->instrumentlabel
                                             && guiMaster->partui->part)
-                        {
                             GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePartProgram, npart);
-                        }
                     }
                 }
         }
@@ -590,12 +601,11 @@ void SynthEngine::SetProgram(unsigned char chan, unsigned short pgm)
                 {
                     if (part[npart]->Penabled == 0 && Runtime.enable_part_on_voice_load != 0)
                         partonoff(npart, 1);
+                    //    writeGuiData(npart | 64);
                     if (Runtime.showGui && guiMaster && guiMaster->partui
                                         && guiMaster->partui->instrumentlabel
                                         && guiMaster->partui->part)
-                    {
                         GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePartProgram, npart);
-                    }
                 }
             }
         }
@@ -625,10 +635,7 @@ void SynthEngine::SetPartChan(unsigned char npart, unsigned char nchan)
         if (Runtime.showGui && guiMaster && guiMaster->partui
                             && guiMaster->partui->instrumentlabel
                             && guiMaster->partui->part)
-        {
-            GuiThreadMsg::sendMessage(this,
-            GuiThreadMsg::UpdatePartProgram, npart);
-        }
+            GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePartProgram, npart);
     }
 }
 
@@ -924,13 +931,13 @@ void SynthEngine::SetSystemValue(int type, int value)
                 value = 52;            
             setPkeyshift(value);
             GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateMaster, 0);
-            Runtime.Log("Set Master key shift " + asString(value)
+            Runtime.Log("Master key shift set to " + asString(value)
                       + "  (" + asString(value - 64) + ")");
             break;
         case 7: // master volume
             setPvolume(value);
             GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateMaster, 0);
-            Runtime.Log("Set Master volume " + asString(value));
+            Runtime.Log("Master volume set to " + asString(value));
             break;
             
         case 100: // reports destination
@@ -997,7 +1004,7 @@ void SynthEngine::SetSystemValue(int type, int value)
             if (value == 128) // but still report the setting
                 Runtime.Log("MIDI Root Change disabled");
             else if (value > -1)
-                Runtime.Log("Set Root CC to " + asString(value));
+                Runtime.Log("Root CC set to " + asString(value));
             break;
             
         case 114: // bank
@@ -1018,9 +1025,9 @@ void SynthEngine::SetSystemValue(int type, int value)
                 }
             }
             if (value == 0)
-                Runtime.Log("Set Bank CC to MSB (0)");
+                Runtime.Log("Bank CC set to MSB (0)");
             else if (value == 32)
-                Runtime.Log("Set Bank CC to LSB (32)");
+                Runtime.Log("Bank CC set to LSB (32)");
             else if (value > -1)
                 Runtime.Log("MIDI Bank Change disabled");
             break;
@@ -1041,9 +1048,9 @@ void SynthEngine::SetSystemValue(int type, int value)
         case 116: // enable on program change
             value = (value > 63);
             if (value)
-                Runtime.Log("Set MIDI Program Change enables part");
+                Runtime.Log("MIDI Program Change will enable part");
             else
-                Runtime.Log("Set MIDI Program Change doesn't enable part");
+                Runtime.Log("MIDI Program Change doesn't enable part");
             if (value != Runtime.enable_part_on_voice_load)
             {
                 Runtime.enable_part_on_voice_load = value;
@@ -1071,15 +1078,15 @@ void SynthEngine::SetSystemValue(int type, int value)
             if (value == 128) // but still report the setting
                 Runtime.Log("MIDI extended Program Change disabled");
             else if (value > -1)
-                Runtime.Log("Set extended Program Change CC to " + asString(value));
+                Runtime.Log("Extended Program Change CC set to " + asString(value));
             break;
             
         case 118: // active parts
             if (value == 16 or value == 32 or value == 64)
             {
                 Runtime.NumAvailableParts = value;
-                Runtime.Log("Set active parts to " + asString(value));
-                GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateMaster, 0);
+                Runtime.Log("Available parts set to " + asString(value));
+                GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePart,0);
             }
             else
                 Runtime.Log("Out of range");
@@ -1311,6 +1318,24 @@ int SynthEngine::commandSet(char *point)
     else
         error = 2;
     return error; 
+}
+
+
+char SynthEngine::readGuiData()
+{
+    char data = 0;
+    if (jack_ringbuffer_read_space(guiringbuf) > 0)
+        jack_ringbuffer_read(guiringbuf, &data, 1);
+    return data;
+}
+
+
+void SynthEngine::writeGuiData(char data)
+{
+    if (!Runtime.showGui || !guiMaster)
+        return;
+    if (jack_ringbuffer_write_space(guiringbuf) > 0)
+        jack_ringbuffer_write(guiringbuf, &data, 1);
 }
 
 
@@ -1614,7 +1639,7 @@ int SynthEngine::MasterAudio(float *outl [NUM_MIDI_PARTS + 1], float *outr [NUM_
     }
 
     int npart;
-    for (npart = 0; npart < (Runtime.NumAvailableParts); ++npart)
+/*    for (npart = 0; npart < (Runtime.NumAvailableParts); ++npart)
     {
         if (part[npart]->Penabled)
         {
@@ -1622,6 +1647,10 @@ int SynthEngine::MasterAudio(float *outl [NUM_MIDI_PARTS + 1], float *outr [NUM_
             memset(outr[npart], 0, p_bufferbytes);
         }
     }
+ * The above was unnecessary as we later do a copy (that completely overwrites
+ * the buffers) to just the parts that have a direct output. Only these are
+ * sent to jack, so it doesn't matter what the unused ones contain.
+ */
     memset(mainL, 0, p_bufferbytes);
     memset(mainR, 0, p_bufferbytes);
 
@@ -1691,8 +1720,9 @@ int SynthEngine::MasterAudio(float *outl [NUM_MIDI_PARTS + 1], float *outr [NUM_
             // Mix the channels according to the part settings about System Effect
             for (npart = 0; npart < Runtime.NumAvailableParts; ++npart)
             {
-                // skip if part is disabled, doesn't go to main or has no output to effect
-                if (part[npart]->Penabled && Psysefxvol[nefx][npart]&& part[npart]->Paudiodest & 1)
+                if (part[npart]->Penabled        // it's enabled
+                 && Psysefxvol[nefx][npart]      // it's sending an output
+                 && part[npart]->Paudiodest & 1) // it's connected to the main outs
                 {
                     // the output volume of each part to system effect
                     float vol = sysefxvol[nefx][npart];

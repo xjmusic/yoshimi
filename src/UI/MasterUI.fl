@@ -85,7 +85,7 @@ decl {extern bool mainCreateNewInstance(unsigned int forceId);} {private global
 decl {class MasterUI;} {public local
 } 
 
-class MasterUI {selected : {private MiscFuncs}
+class MasterUI {open : {private MiscFuncs}
 } {
   Function {MasterUI(SynthEngine *_synth)} {} {
     code {//
@@ -841,7 +841,7 @@ paramsui->Show();}
           npart = nval;
           updatepanel();
           maxparts->value(synth->getRuntime().NumAvailableParts);}
-        xywh {38 265 40 20} labelsize 11 minimum 0 maximum 127 textsize 11
+        xywh {38 265 40 20} labelsize 11 when 6 minimum 0 maximum 127 textsize 11
         code0 {o->type(FL_INT_INPUT); o->range(1.0, synth->getRuntime().NumAvailableParts);}
         code1 {bankui->init(o);}
       }
@@ -858,6 +858,7 @@ if (tmp == 48)
 }
 synth->getRuntime().NumAvailableParts = tmp;
 updatepart();
+updatepanel();
 setinspartlist();}
         xywh {95 265 40 20} labelsize 11 minimum 16 maximum 64 step 16 value 16 textsize 11
         code0 {o->value(synth->getRuntime().NumAvailableParts);}
@@ -1036,11 +1037,16 @@ updatepanel();}
             for (int neff2 = neff1 + 1; neff2 < NUM_SYS_EFX; ++neff2)
                 syseffsend[neff1][neff2]->value(synth->Psysefxsend[neff1][neff2]);} {}
   }
+  Function {updatelistitem(int part)} {} {
+    code {//
+    int tmp = part % NUM_MIDI_CHANNELS;
+    panellistitem[tmp]->refresh();} {}
+  }
   Function {updatepanel()} {} {
     code {//
         for (int npart = 0; npart < NUM_MIDI_CHANNELS; ++npart)
             panellistitem[npart]->refresh();
-               if (synth->getRuntime().single_row_panel)
+        if (synth->getRuntime().single_row_panel)
         {
         	panelwindow->size(1085,345);
 	        Panelpack2->position(544,10);
@@ -1071,14 +1077,33 @@ updatepanel();}
             Panelsmallgroups->hide();
         panelwindow->changed();} {}
   }
-  Function {updatepart()} {} {
+  Function {updatepart()} {open
+  } {
     code {//
-    checkmaxparts();
-    npartcounter->do_callback();} {}
+    if (checkmaxparts())
+    {
+        npartcounter->value(npart + 1);
+        npartcounter->do_callback();
+        return;
+    }
+    if (synth->part[npart]->Penabled)
+        partui->partgroupui->activate();
+    else
+        partui->partgroupui->deactivate();
+    partui->partpan->value(synth->part[npart]->Ppanning);
+    partui->partvol->value(synth->part[npart]->Pvolume);
+    maxparts->value(synth->getRuntime().NumAvailableParts);
+    maxparts->redraw();
+    npartcounter->value(npart + 1);
+    npartcounter->redraw();
+    partui->setinstrumentlabel();} {selected
+    }
   }
-  Function {updatepartprogram(int npart)} {} {
+  Function {updatepartprogram(int _npart)} {open
+  } {
     code {//
-    updatepart();
+    if (_npart != npart)
+        return;
     if (partui->part->Prcvchn <  NUM_MIDI_CHANNELS)
     {
         partui->midich->value(partui->part->Prcvchn + 1);
@@ -1088,7 +1113,8 @@ updatepanel();}
     {
          partui->midich->textcolor(FL_WHITE);
          partui->midich->redraw();
-    }} {}
+    }
+    updatepart();} {}
   }
   Function {updateeffects(int data)} {} {
     code {//
@@ -1300,9 +1326,10 @@ updatepanel();}
     else
         Reports->activate();} {}
   }
-  Function {checkmaxparts()} {private
+  Function {checkmaxparts()} {private return_type bool
   } {
     code {//
+    bool changed = false;
     int max = synth->getRuntime().NumAvailableParts;
     if(panelgroup >= max)
     {
@@ -1310,10 +1337,12 @@ updatepanel();}
         npart = 0;
         Panelgroups->value(0);
         Panelsmallgroups->value(0);
+        changed = true;
     }
     npartcounter->range(1.0,max);
     if ( npartcounter->value() >= (max + 1))
-        npartcounter->value(1);} {}
+        npartcounter->value(1);
+    return changed;} {}
   }
   Function {strategicRetreat(void)} {} {
     code {fl_alert("Bad things happened,\\nYoshimi strategically retreats.");} {}

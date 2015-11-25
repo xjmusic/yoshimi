@@ -120,6 +120,7 @@ Config::Config(SynthEngine *_synth, int argc, char **argv) :
     midi_bank_C(32),
     midi_upper_voice_C(128),
     enable_part_on_voice_load(1),
+    monitorCCin(false),
     single_row_panel(1),
     NumAvailableParts(NUM_MIDI_CHANNELS),
     currentPart(0),
@@ -1203,6 +1204,17 @@ void GuiThreadMsg::processGuiMessages()
             }
         }
             break;
+        case GuiThreadMsg::UpdatePart:
+        {
+            SynthEngine *synth = ((SynthEngine *)msg->data);
+            MasterUI *guiMaster = synth->getGuiMaster(false);
+            if(guiMaster)
+            {
+                guiMaster->updatepart();
+                guiMaster->updatepanel();
+            }
+        }
+            break;
         case GuiThreadMsg::UpdatePanelItem:
             if(msg->index < NUM_MIDI_PARTS && msg->data)
             {
@@ -1210,7 +1222,7 @@ void GuiThreadMsg::processGuiMessages()
                 MasterUI *guiMaster = synth->getGuiMaster(false);
                 if(guiMaster)
                 {
-                    guiMaster->panellistitem[(msg->index) % NUM_MIDI_CHANNELS]->refresh();
+                    guiMaster->updatelistitem(msg->index);
                     guiMaster->updatepart();
                 }
             }
@@ -1222,6 +1234,7 @@ void GuiThreadMsg::processGuiMessages()
                 MasterUI *guiMaster = synth->getGuiMaster(false);
                 if(guiMaster)
                 {
+                    guiMaster->updatelistitem(msg->index);
                     guiMaster->updatepartprogram(msg->index);
                 }
             }
