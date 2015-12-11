@@ -48,9 +48,7 @@ static unsigned int getRemoveSynthId(bool remove = false, unsigned int idx = 0)
     if (remove)
     {
         if (idMap.count(idx) > 0)
-        {
             idMap.erase(idx);
-        }
         return 0;
     }
     else if (idx > 0)
@@ -97,7 +95,7 @@ SynthEngine::SynthEngine(int argc, char **argv, bool _isLV2Plugin, unsigned int 
     tmpmixr(NULL),
     processLock(NULL),
     vuringbuf(NULL),
-    guiringbuf(NULL),
+    RBPringbuf(NULL),
     stateXMLtree(NULL),
     guiMaster(NULL),
     guiClosedCallback(NULL),
@@ -106,9 +104,7 @@ SynthEngine::SynthEngine(int argc, char **argv, bool _isLV2Plugin, unsigned int 
     windowTitle("Yoshimi" + asString(uniqueId))
 {    
     if (bank.roots.empty())
-    {
         bank.addDefaultRootDirs();
-    }
     memset(&random_state, 0, sizeof(random_state));
 
     ctl = new Controller(this);
@@ -127,8 +123,8 @@ SynthEngine::~SynthEngine()
     closeGui();
     if (vuringbuf)
         jack_ringbuffer_free(vuringbuf);
-    if (guiringbuf)
-        jack_ringbuffer_free(guiringbuf);
+    if (RBPringbuf)
+        jack_ringbuffer_free(RBPringbuf);
     
     for (int npart = 0; npart < NUM_MIDI_PARTS; ++npart)
         if (part[npart])
@@ -207,7 +203,7 @@ bool SynthEngine::Init(unsigned int audiosrate, int audiobufsize)
         goto bail_out;
     }
 
-    if (!(guiringbuf = jack_ringbuffer_create(256)))
+    if (!(RBPringbuf = jack_ringbuffer_create(512)))
     {
         Runtime.Log("SynthEngine failed to create GUI ringbuffer");
         goto bail_out;
@@ -310,7 +306,16 @@ bool SynthEngine::Init(unsigned int audiosrate, int audiobufsize)
         else
             cout << "Can't find path " << Runtime.rootDefine << endl;
     }
+    
+    
+    if (!Runtime.startThread(&RBPthreadHandle, _RBPthread, this, true, 1, false))
+    {
+        Runtime.Log("Failed to start RBP thread");
+        goto bail_out;
+    }
+    
     return true;
+    
 
 bail_out:
     if (fft)
@@ -321,9 +326,9 @@ bail_out:
         jack_ringbuffer_free(vuringbuf);
     vuringbuf = NULL;
     
-    if (guiringbuf)
-        jack_ringbuffer_free(guiringbuf);
-    guiringbuf = NULL;
+    if (RBPringbuf)
+        jack_ringbuffer_free(RBPringbuf);
+    RBPringbuf = NULL;
 
     if (tmpmixl)
         fftwf_free(tmpmixl);
@@ -350,6 +355,64 @@ bail_out:
         sysefx[nefx] = NULL;
     }
     return false;
+}
+
+
+void *SynthEngine::_RBPthread(void *arg)
+{
+    return static_cast<SynthEngine*>(arg)->RBPthread();
+}
+
+
+void *SynthEngine::RBPthread(void)
+{
+    struct RBP_data block;
+    unsigned int readsize = sizeof(RBP_data);
+    memset(block.data, 0, readsize);
+    char *point;
+    unsigned int toread;
+    unsigned int read;
+    unsigned int found;
+    unsigned int tries;
+    while (Runtime.runSynth)
+    {
+        if (jack_ringbuffer_read_space(RBPringbuf) >= readsize)
+        {
+            toread = readsize;
+            read = 0;
+            tries = 0;
+            point = (char*)&block;
+            while (toread && tries < 3)
+            {
+                found = jack_ringbuffer_read(RBPringbuf, point, toread);
+                read += found;
+                point += found;
+                toread -= found;
+                ++tries;
+                
+            }
+            if (!toread)
+            {
+                switch ((unsigned char)block.data[0])
+                {
+                    case 1:
+                        SetBankRoot(block.data[1]);
+                        break;
+                    case 2:
+                        SetBank(block.data[1]);
+                        break;
+                    case 3:
+                        SetProgram(block.data[1], block.data[2]);
+                        break;
+                }
+            }
+            else
+                Runtime.Log("Unable to read data from Root/bank/Program");
+        }
+        else
+            usleep(500);
+    }
+    return NULL;
 }
 
 
@@ -439,7 +502,6 @@ void SynthEngine::SetController(unsigned char chan, int type, short int par)
                 {
                     part[npart]->SetController(type, par);
                     if (type == 7 || type == 10) // currently only volume and pan
-                    //    writeGuiData(npart | 128);
                         GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePanelItem, npart);
                      
                 }
@@ -452,7 +514,6 @@ void SynthEngine::SetController(unsigned char chan, int type, short int par)
             {
                 part[npart]->SetController(type, par);
                 if (type == 7 || type == 10) // currently only volume and pan
-                //    writeGuiData(npart | 128);
                     GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePanelItem, npart);
             }
         }
@@ -491,9 +552,7 @@ void SynthEngine::SetZynControls()
                     Pinsparts[effnum] = value;
             }
             else if (efftype == 0x40) // select effect
-            {
                 insefx[effnum]->changeeffect(value);
-            }
             else
                 insefx[effnum]->seteffectpar(parnum, value);
             data |= (Pinsparts[effnum] + 2) << 24; // needed for both operations
@@ -506,9 +565,7 @@ void SynthEngine::SetZynControls()
                 
             }
             else if (efftype == 0x40) // select effect
-            {
                 sysefx[effnum]->changeeffect(value);
-            }
             else
                 sysefx[effnum]->seteffectpar(parnum, value);
         }
@@ -521,19 +578,15 @@ void SynthEngine::SetBankRoot(int rootnum)
 {
     if (bank.setCurrentRootID(rootnum))
     {
+        if (Runtime.showGui)
+        {
+            GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateBankRootDirs, 0);
+            GuiThreadMsg::sendMessage(this, GuiThreadMsg::RescanForBanks, 0);
+        }
         Runtime.Log("Set root " + asString(rootnum) + " " + bank.getRootPath(bank.getCurrentRootID()));
     }
     else
-    {
         Runtime.Log("No match for root ID " + asString(rootnum));
-    }
-    if (Runtime.showGui)
-    {
-        guiMaster->updateBankRootDirs();
-        guiMaster->bankui->rescan_for_banks(false);
-    }
-
-
 }
 
 
@@ -547,18 +600,14 @@ void SynthEngine::SetBank(int banknum)
     //new implementation uses only 1 call :)
     if (bank.setCurrentBankID(banknum, true))
     {
-        if (Runtime.showGui && guiMaster && guiMaster && guiMaster->bankui)
+        if (Runtime.showGui)
         {
-            guiMaster->bankui->set_bank_slot();
-            guiMaster->bankui->refreshmainwindow();
+            GuiThreadMsg::sendMessage(this, GuiThreadMsg::RefreshCurBank, 0);
         }
         Runtime.Log("Set bank " + asString(banknum) + " " + bank.roots [bank.currentRootID].banks [banknum].dirname);
-
     }
     else
-    {
         Runtime.Log("No bank " + asString(banknum)+ " in this root");
-    }
 }
 
 
@@ -567,9 +616,7 @@ void SynthEngine::SetProgram(unsigned char chan, unsigned short pgm)
     bool partOK = false;
     int npart;
     if (bank.getname(pgm) < "!") // can't get a program name less than this
-    {
         Runtime.Log("No Program " + asString(pgm) + " in this bank");
-    }
     else
     {
         if (chan <  NUM_MIDI_CHANNELS) // a normal program change
@@ -583,7 +630,6 @@ void SynthEngine::SetProgram(unsigned char chan, unsigned short pgm)
                         partOK = true; 
                         if (part[npart]->Penabled == 0 && Runtime.enable_part_on_voice_load != 0)
                             partonoff(npart, 1);
-                        //writeGuiData(npart | 64);
                         if (Runtime.showGui && guiMaster && guiMaster->partui
                                             && guiMaster->partui->instrumentlabel
                                             && guiMaster->partui->part)
@@ -601,7 +647,6 @@ void SynthEngine::SetProgram(unsigned char chan, unsigned short pgm)
                 {
                     if (part[npart]->Penabled == 0 && Runtime.enable_part_on_voice_load != 0)
                         partonoff(npart, 1);
-                    //    writeGuiData(npart | 64);
                     if (Runtime.showGui && guiMaster && guiMaster->partui
                                         && guiMaster->partui->instrumentlabel
                                         && guiMaster->partui->part)
@@ -610,9 +655,7 @@ void SynthEngine::SetProgram(unsigned char chan, unsigned short pgm)
             }
         }
         if (partOK)
-        {
             Runtime.Log("Loaded " + asString(pgm) + " " + bank.getname(pgm) + " to " + asString(chan & 0x7f));
-        }
         else
             Runtime.Log("SynthEngine setProgram: Invalid program data");
     }
@@ -672,7 +715,7 @@ void SynthEngine::SetPartDestination(unsigned char npart, unsigned char dest)
 /*
  * This should really be in MiscFuncs but it has two runtime calls
  * and I can't work out a way to implement that :(
- * We als have to fake long pages when calling via NRPNs as there
+ * We also have to fake long pages when calling via NRPNs as there
  * is no readline entry to set the page length.
  */
 
@@ -1321,21 +1364,32 @@ int SynthEngine::commandSet(char *point)
 }
 
 
-char SynthEngine::readGuiData()
+void SynthEngine::writeRBP(char type, char data0, char data1)
 {
-    char data = 0;
-    if (jack_ringbuffer_read_space(guiringbuf) > 0)
-        jack_ringbuffer_read(guiringbuf, &data, 1);
-    return data;
-}
+    struct RBP_data block;
+    unsigned int writesize = sizeof(RBP_data);
+    block.data[0] = type;
+    block.data[1] = data0;
+    block.data[2] = data1;
+    char *point = (char*)&block;
+    unsigned int towrite = writesize;
+    unsigned int wrote = 0;
+    unsigned int found;
+    unsigned int tries = 0;
 
-
-void SynthEngine::writeGuiData(char data)
-{
-    if (!Runtime.showGui || !guiMaster)
-        return;
-    if (jack_ringbuffer_write_space(guiringbuf) > 0)
-        jack_ringbuffer_write(guiringbuf, &data, 1);
+    if (jack_ringbuffer_write_space(RBPringbuf) > 0)
+    {
+        while (towrite && tries < 3)
+        {
+            found = jack_ringbuffer_write(RBPringbuf, point, towrite);
+            wrote += found;
+            point += found;
+            towrite -= found;
+            ++tries;
+        }
+        if (towrite)
+            Runtime.Log("Unable to write data to Root/bank/Program");
+    }
 }
 
 
@@ -1859,7 +1913,7 @@ int SynthEngine::MasterAudio(float *outl [NUM_MIDI_PARTS + 1], float *outr [NUM_
                     VUpeak.values.parts[npart]+= 2;
             }
         }
-    }    
+    }
     return p_buffersize;
 }
 
@@ -2153,9 +2207,7 @@ bool SynthEngine::getfromXML(XMLwrapper *xml)
         part[npart]->getfromXML(xml);
         xml->exitbranch();
         if (part[npart]->Penabled && (part[npart]->Paudiodest & 2))
-        {
             GuiThreadMsg::sendMessage(this, GuiThreadMsg::RegisterAudioPort, npart);
-        }
     }
 
     if (xml->enterbranch("MICROTONAL"))
@@ -2269,9 +2321,7 @@ float SynthHelper::getDetune(unsigned char type, unsigned short int coarsedetune
 MasterUI *SynthEngine::getGuiMaster(bool createGui)
 {
     if (guiMaster == NULL && createGui)
-    {
         guiMaster = new MasterUI(this);
-    }
     return guiMaster;
 }
 
@@ -2309,8 +2359,6 @@ string SynthEngine::makeUniqueName(string name)
 void SynthEngine::setWindowTitle(string _windowTitle)
 {
     if (!_windowTitle.empty())
-    {
         windowTitle = _windowTitle;
-    }
 }
 

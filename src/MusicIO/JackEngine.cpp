@@ -47,8 +47,8 @@ JackEngine::JackEngine(SynthEngine *_synth) : MusicIO(_synth), jackClient(NULL)
         audio.portBuffs[i] = NULL;
     }
     midi.port = NULL;
-    midi.ringBuf = NULL;
-    midi.pThread = 0;
+//    midi.ringBuf = NULL;
+//    midi.pThread = 0;
 }
 
 
@@ -72,7 +72,7 @@ bool JackEngine::connectServer(string server)
     else
     {
         synth->getRuntime().Log("Failed to open jack client on server " + server);
-        splashMessages.push_back("Can't connect to jack audio :(");
+        splashMessages.push_back("Can't connect to jack :(");
     }
     return false;
 }
@@ -157,11 +157,11 @@ bool JackEngine::Start(void)
         goto bail_out;
     }
 
-    if (midi.port && !synth->getRuntime().startThread(&midi.pThread, _midiThread, this, true, 1, false))
+/*    if (midi.port && !synth->getRuntime().startThread(&midi.pThread, _midiThread, this, true, 1, false))
     {
         synth->getRuntime().Log("Failed to start jack midi thread");
         goto bail_out;
-    }
+    }*/
 
     if (!latencyPrep())
     {
@@ -195,12 +195,15 @@ bool JackEngine::Start(void)
     }
     
     // style-wise I think the next bit is the wrong place
-    if (synth->getRuntime().midiEngine  == jack_midi and synth->getRuntime().midiDevice.size() and jack_connect(jackClient,synth->getRuntime().midiDevice.c_str(),jack_port_name(midi.port)))
+    if (synth->getRuntime().midiEngine  == jack_midi
+      && synth->getRuntime().midiDevice.size()
+      && synth->getRuntime().midiDevice != "default"
+      && jack_connect(jackClient,synth->getRuntime().midiDevice.c_str(),jack_port_name(midi.port)))
     {
-        synth->getRuntime().Log("Didn't find jack MIDI source '" + synth->getRuntime().midiDevice + "'");
+        synth->getRuntime().Log("Didn't find jack MIDI source '"
+        + synth->getRuntime().midiDevice + "'");
         synth->getRuntime().midiDevice = "";
     }
-    
     return true;
 
 bail_out:
@@ -216,7 +219,7 @@ void JackEngine::Close(void)
         synth->getRuntime().runSynth = false;
     }
 
-    if(midi.pThread != 0) //wait for midi thread to finish
+/*    if(midi.pThread != 0) //wait for midi thread to finish
     {
         if (sem_post(&midiSem) == 0)
         {
@@ -224,7 +227,7 @@ void JackEngine::Close(void)
             pthread_join(midi.pThread, &ret);
             midi.pThread = 0;
         }
-    }
+    }*/
 
     if (NULL != jackClient)
     {
@@ -244,11 +247,11 @@ void JackEngine::Close(void)
         chk = jack_deactivate(jackClient);
         if (chk)
             synth->getRuntime().Log("Failed to close jack client, status: " + asString(chk));
-        if (NULL != midi.ringBuf)
+/*        if (NULL != midi.ringBuf)
         {
             jack_ringbuffer_free(midi.ringBuf);
             midi.ringBuf = NULL;
-        }
+        }*/
         jackClient = NULL;
     }
 }
@@ -329,7 +332,7 @@ bool JackEngine::openMidi(void)
         synth->getRuntime().Log("Failed to register jack midi port");
         return false;
     }
-    midi.ringBuf = jack_ringbuffer_create(sizeof(struct midi_event) * 4096);
+    /*midi.ringBuf = jack_ringbuffer_create(sizeof(struct midi_event) * 4096);
     if (!midi.ringBuf)
     {
         synth->getRuntime().Log("Failed to create jack midi ringbuffer");
@@ -339,7 +342,7 @@ bool JackEngine::openMidi(void)
     {
         synth->getRuntime().Log("Failed to lock memory");
         return false;
-    }
+    }*/
     return true;
 }
 
@@ -504,23 +507,23 @@ bool JackEngine::processMidi(jack_nframes_t nframes)
     }
 
     unsigned int idx;
-    unsigned int act_write;
-    struct midi_event event;
+/*    unsigned int act_write;
+    struct midi_event midiEvent;
     char *data;
     unsigned int wrote = 0;
-    unsigned int tries = 0;
+    unsigned int tries = 0;*/
     jack_midi_event_t jEvent;
     jack_nframes_t eventCount = jack_midi_get_event_count(portBuf);
     for(idx = 0; idx < eventCount; ++idx)
     {
         if(!jack_midi_event_get(&jEvent, portBuf, idx))
         {
-            if (jEvent.size < 1 || (jEvent.size > sizeof(event.data)))
+            if (jEvent.size < 1 || jEvent.size > 4)
                 continue; // no interest in zero sized or long events
-            event.time = jEvent.time;
-            memset(event.data, 0, sizeof(event.data));
-            memcpy(event.data, jEvent.buffer, jEvent.size);
-            wrote = 0;
+/*            midiEvent.time = jEvent.time;
+            memset(midiEvent.data, 0, sizeof(midiEvent.data));
+            memcpy(midiEvent.data, jEvent.buffer, jEvent.size);
+           wrote = 0;
             tries = 0;
             data = (char*)&event;
             while (wrote < sizeof(struct midi_event) && tries < 3)
@@ -547,6 +550,89 @@ bool JackEngine::processMidi(jack_nframes_t nframes)
         }
         else
             synth->getRuntime().Log("... jack midi read failed");
+    }*/
+    
+    unsigned char channel, note, velocity;
+    int ctrltype;
+    int par = 0;
+//    unsigned int fetch;
+    unsigned int ev;
+    
+        channel = jEvent.buffer[0] & 0x0F;
+        switch ((ev = jEvent.buffer[0] & 0xF0))
+        {
+            case 0x01: // modulation wheel or lever
+                ctrltype = C_modwheel;
+                par = jEvent.buffer[2];
+                setMidiController(channel, ctrltype, par);
+                break;
+
+            case 0x07: // channel volume (formerly main volume)
+                ctrltype = C_volume;
+                par = jEvent.buffer[2];
+                setMidiController(channel, ctrltype, par);
+                break;
+
+            case 0x0B: // expression controller
+                ctrltype = C_expression;
+                par = jEvent.buffer[2];
+                setMidiController(channel, ctrltype, par);
+                break;
+
+            case 0x78: // all sound off
+                ctrltype = C_allsoundsoff;
+                setMidiController(channel, ctrltype, 0);
+                break;
+
+            case 0x79: // reset all controllers
+                ctrltype = C_resetallcontrollers;
+                setMidiController(channel, ctrltype, 0);
+                break;
+
+            case 0x7B:  // all notes off
+                ctrltype = C_allnotesoff;
+                setMidiController(channel, ctrltype, 0);
+                break;
+
+            case 0x80: // note-off
+                note = jEvent.buffer[1];
+                setMidiNote(channel, note);
+                break;
+
+            case 0x90: // note-on
+                if ((note = jEvent.buffer[1])) // skip note == 0
+                {
+                    velocity = jEvent.buffer[2];
+                    setMidiNote(channel, note, velocity);
+                }
+                break;
+
+            case 0xB0: // controller
+                ctrltype = getMidiController(jEvent.buffer[1]);
+                par = jEvent.buffer[2];
+                setMidiController(channel, ctrltype, par);
+                break;
+                
+            case 0xC0: // program change
+                ctrltype = C_programchange;
+                par = jEvent.buffer[1];
+                setMidiProgram(channel, par);
+                break;
+
+            case 0xE0: // pitch bend
+                ctrltype = C_pitchwheel;
+                par = ((jEvent.buffer[2] << 7) | jEvent.buffer[1]) - 8192;
+                setMidiController(channel, ctrltype, par);
+                break;
+
+            case 0xF0: // system exclusive
+                break;
+
+            default: // wot, more? commented out some progs spam us :(
+                // synth->getRuntime().Log("other event: " + asString((int)ev));
+                break;
+        }
+        }
     }
     return true;
 }
@@ -567,7 +653,7 @@ void JackEngine::_errorCallback(const char *msg)
 }
 
 
-void *JackEngine::_midiThread(void *arg)
+/*void *JackEngine::_midiThread(void *arg)
 {
     return static_cast<JackEngine*>(arg)->midiThread();
 }
@@ -680,7 +766,7 @@ void *JackEngine::midiThread(void)
     }
     sem_destroy(&midiSem);
     return NULL;
-}
+}*/
 
 
 bool JackEngine::latencyPrep(void)

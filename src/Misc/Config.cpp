@@ -72,6 +72,7 @@ static struct argp_option cmd_options[] = {
     {"define-root",       'D',  "<path>",     0,  "define path to new bank root"},
     {"buffersize",        'b',  "<size>",     0,  "set internal buffer size" },
     {"no-gui",            'i',  NULL,         0,  "no gui"},
+    {"no-cmdline",        'c',  NULL,         0,  "don't show command line interface"},
     {"jack-audio",        'J',  "<server>",   1,  "use jack audio output" },
     {"jack-midi",         'j',  "<device>",   1,  "use jack midi input" },
     {"autostart-jack",    'k',  NULL,         0,  "auto start jack server" },
@@ -104,6 +105,7 @@ Config::Config(SynthEngine *_synth, int argc, char **argv) :
     audioDevice("default"),
     midiDevice("default"),
     jackServer("default"),
+    jackMidiDevice("default"),
     startJack(false),
     connectJackaudio(false),
     alsaAudioDevice("default"),
@@ -180,11 +182,10 @@ bool Config::Setup(int argc, char **argv)
     }
     if (!audioDevice.size())
         audioDevice = "default";
-
     switch (midiEngine)
     {
         case jack_midi:
-            midiDevice = string(jackServer);
+            midiDevice = string(jackMidiDevice);
             break;
         case alsa_midi:
             midiDevice = string(alsaMidiDevice);
@@ -516,6 +517,7 @@ bool Config::extractConfigData(XMLwrapper *xml)
 
     // jack settings
     jackServer = xml->getparstr("linux_jack_server");
+    jackMidiDevice = xml->getparstr("linux_jack_midi_dev");
 
     // midi options
     midi_bank_root = xml->getpar("midi_bank_root", midi_bank_root, 0, 128);
@@ -602,6 +604,7 @@ void Config::addConfigXML(XMLwrapper *xmltree)
     xmltree->addparstr("linux_alsa_audio_dev", alsaAudioDevice);
     xmltree->addparstr("linux_alsa_midi_dev", alsaMidiDevice);
     xmltree->addparstr("linux_jack_server", jackServer);
+    xmltree->addparstr("linux_jack_midi_dev", jackMidiDevice);
 
     xmltree->addpar("midi_bank_root", midi_bank_root);
     xmltree->addpar("midi_bank_C", midi_bank_C);
@@ -1041,6 +1044,8 @@ static error_t parse_cmds (int key, char *arg, struct argp_state *state)
             settings->midiEngine = alsa_midi;
             if (arg)
                 settings->midiDevice = string(arg);
+            else
+                settings->midiDevice = string(settings->alsaMidiDevice);
             break;
         case 'b': // messy but I can't think of a better way :(
             num = Config::string2int(string(arg));
@@ -1076,6 +1081,8 @@ static error_t parse_cmds (int key, char *arg, struct argp_state *state)
             settings->midiEngine = jack_midi;
             if (arg)
                 settings->midiDevice = string(arg);
+            else
+                settings->midiDevice = string(settings->jackMidiDevice);
             break;
         case 'k': settings->startJack = true; break;
         case 'K': settings->connectJackaudio = true; break;
@@ -1123,6 +1130,8 @@ static error_t parse_cmds (int key, char *arg, struct argp_state *state)
                         settings->jackSessionUuid = string(arg);
             break;
         #endif
+        case 'c': // no-cmdline is handled in main()
+            break;
         case ARGP_KEY_ARG:
         case ARGP_KEY_END:
             break;
@@ -1255,6 +1264,40 @@ void GuiThreadMsg::processGuiMessages()
             {
                 SynthEngine *synth = ((SynthEngine *)msg->data);
                 mainRegisterAudioPort(synth, msg->index);
+            }
+            break;
+        case GuiThreadMsg::UpdateBankRootDirs:
+            if(msg->data)
+            {
+                SynthEngine *synth = ((SynthEngine *)msg->data);
+                MasterUI *guiMaster = synth->getGuiMaster(false);
+                if(guiMaster)
+                {
+                    guiMaster->updateBankRootDirs();
+                }
+            }
+            break;
+        case GuiThreadMsg::RescanForBanks:
+            if(msg->data)
+            {
+                SynthEngine *synth = ((SynthEngine *)msg->data);
+                MasterUI *guiMaster = synth->getGuiMaster(false);
+                if(guiMaster && guiMaster->bankui)
+                {
+                    guiMaster->bankui->rescan_for_banks(false);
+                }
+            }
+            break;
+        case GuiThreadMsg::RefreshCurBank:
+            if(msg->data)
+            {
+                SynthEngine *synth = ((SynthEngine *)msg->data);
+                MasterUI *guiMaster = synth->getGuiMaster(false);
+                if(guiMaster && guiMaster->bankui)
+                {
+                    guiMaster->bankui->set_bank_slot();
+                    guiMaster->bankui->refreshmainwindow();
+                }
             }
             break;
         default:

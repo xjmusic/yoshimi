@@ -111,12 +111,12 @@ class Config : public MiscFuncs
         string        midiDevice;
 
         string        jackServer;
+        string        jackMidiDevice;
         bool          startJack;        // false
         bool          connectJackaudio; // false
         string        jackSessionUuid;
 
         string        alsaAudioDevice;
-
         string        alsaMidiDevice;
         string        nameTag;
 
@@ -223,6 +223,9 @@ public:
         UpdatePartProgram,
         UpdateEffects,
         RegisterAudioPort,
+        UpdateBankRootDirs,
+        RescanForBanks,
+        RefreshCurBank,
         UNDEFINED = 9999
     };
     void *data; //custom data, must be static or handled by called, does nod freed by receiver

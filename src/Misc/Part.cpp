@@ -363,10 +363,13 @@ void Part::NoteOn(int note, int velocity, int masterkeyshift)
         else
             notebasefreq = microtonal->getNoteFreq(note);
 
-        if (Pfrand > 0.002)  // effective range 0.005 to 0.1
-        {
-          notebasefreq *= (1 + ((synth->numRandom() - 0.5f) * Pfrand));
-        }
+        // Humanise
+        // cout << "\n" << notebasefreq << endl;
+        if (!Pdrummode && Pfrand >= 1) // otherwise 'off'
+            // this is an approximation to keep the math simple and is
+            // about 1 cent out at 50 cents
+            notebasefreq *= (1.0f + ((synth->numRandom() - 0.5f) * Pfrand * 0.00115f));
+        // cout << notebasefreq << endl;
 
         // Portamento
         if (oldfreq < 1.0f)
@@ -1184,6 +1187,7 @@ void Part::add2XML(XMLwrapper *xml)
     xml->addparbool("poly_mode", Ppolymode);
     xml->addpar("legato_mode", Plegatomode);
     xml->addpar("key_limit", Pkeylimit);
+    xml->addpar("random_detune", Pfrand);
     xml->addpar("destination", Paudiodest);
 
     xml->beginbranch("INSTRUMENT");
@@ -1371,6 +1375,9 @@ void Part::getfromXML(XMLwrapper *xml)
     {
         Pkeylimit = POLIPHONY - 20;
     }
+    Pfrand = xml->getpar127("random_detune", Pfrand);
+    if (Pfrand > 50)
+        Pfrand = 50;
     setDestination(xml->getpar127("destination", Paudiodest));
     
     if (xml->enterbranch("INSTRUMENT"))
