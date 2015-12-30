@@ -47,6 +47,7 @@ class EffectMgr;
 class Part;
 class XMLwrapper;
 class Controller;
+class CmdInterface;
 
 class MasterUI;
 
@@ -82,11 +83,13 @@ class SynthEngine : private SynthHelper, MiscFuncs
         void NoteOff(unsigned char chan, unsigned char note);
         void SetController(unsigned char chan, int type, short int par);
         void SetZynControls();
+        void SetEffects(unsigned char category, unsigned char command, unsigned char nFX, unsigned char nType, int nPar, unsigned char value);
         void SetBankRoot(int rootnum);
         void SetBank(int banknum);
         void SetProgram(unsigned char chan, unsigned short pgm);
         void SetPartChan(unsigned char npart, unsigned char nchan);
         void SetPartDestination(unsigned char npart, unsigned char dest);
+        void SetPartPortamento(int npart, bool state);
         void cliOutput(list<string>& msg_buf, unsigned int lines);
         void ListPaths(list<string>& msg_buf);
         void ListBanks(int rootNum, list<string>& msg_buf);
@@ -95,8 +98,6 @@ class SynthEngine : private SynthHelper, MiscFuncs
         void ListVectors(list<string>& msg_buf);
         void ListSettings(list<string>& msg_buf);
         void SetSystemValue(int type, int value);
-        int commandSet(char *point);
-        int commandVector(char *point);
         void writeRBP(char type, char data0, char data1);
         bool vectorInit(int dHigh, unsigned char chan, int par);
         void vectorSet(int dHigh, unsigned char chan, int par);

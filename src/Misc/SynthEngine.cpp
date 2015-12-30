@@ -441,6 +441,8 @@ void SynthEngine::defaults(void)
             setPsysefxsend(nefx, nefxto, 0);
     }
     microtonal.defaults();
+    Runtime.currentPart = 0;
+    //CmdInterface.defaults(); // **** need to work out how to call this
     Runtime.NumAvailableParts = 16;
     ShutUp();
 }
@@ -532,45 +534,114 @@ void SynthEngine::SetZynControls()
 {
     unsigned char parnum = Runtime.dataH;
     unsigned char value = Runtime.dataL;
+
+    
     if (parnum <= 0x7f && value <= 0x7f)
     {
         Runtime.dataL = 0xff; // use once then clear it out
         unsigned char effnum = Runtime.nrpnL;
         unsigned char efftype = (parnum & 0x60);
-        int data = value;
-        data |= (parnum << 8);
-        data |= (effnum << 16);
+        int data = (effnum << 8);
         parnum &= 0x1f;
+
         if (Runtime.nrpnH == 8)
         {
-            data |= 0x400000;
-            if (efftype == 0x20) // select part
+            data |= (1 << 22);
+            if (efftype == 0x40) // select effect
+            {
+                actionLock(lockmute);
+                insefx[effnum]->changeeffect(value);
+                actionLock(unlock);
+            }
+            else if (efftype == 0x20) // select part
             {
                 if (value >= 0x7e)
                     Pinsparts[effnum] = value - 0x80; // set for 'Off' and 'Master out'
                 else if (value < Runtime.NumAvailableParts)
                     Pinsparts[effnum] = value;
             }
-            else if (efftype == 0x40) // select effect
-                insefx[effnum]->changeeffect(value);
             else
                 insefx[effnum]->seteffectpar(parnum, value);
-            data |= (Pinsparts[effnum] + 2) << 24; // needed for both operations
+            data |= ((Pinsparts[effnum] + 2) << 24); // needed for both operations
         }
         else
         {
-            if (efftype == 0x20) // select output level
+            if (efftype == 0x40) // select effect
+                sysefx[effnum]->changeeffect(value);
+            else if (efftype == 0x20) // select output level
             {
                 // setPsysefxvol(effnum, parnum, value); // this isn't correct!
                 
             }
-            else if (efftype == 0x40) // select effect
-                sysefx[effnum]->changeeffect(value);
             else
                 sysefx[effnum]->seteffectpar(parnum, value);
         }
         GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateEffects, data);
     }
+}
+
+
+void SynthEngine::SetEffects(unsigned char category, unsigned char command, unsigned char nFX, unsigned char nType, int nPar, unsigned char value)
+{
+    // category 0-sysFX, 1-insFX, 2-partFX
+    // command 1-set effect, 4-set param, 8-set preset
+    
+    int npart = getRuntime().currentPart;
+    int data = (nFX) << 8;
+    
+    
+    switch (category)
+    {
+        case 1:
+            data |= (1 << 22);
+            
+            switch (command)
+            {
+                case 1:
+                    insefx[nFX]->changeeffect(nType);
+                    data |= ((Pinsparts[nFX] + 2) << 24);
+                    break;
+                case 4:
+                    Pinsparts[nFX] = nPar;
+                    data |= ((nPar + 2) << 24);
+                    break;
+                case 8:
+                    insefx[nFX]->changepreset(value);
+                    data |= ((Pinsparts[nFX] + 2) << 24);
+                    break;
+            }
+            break;
+        case 2:
+            data |= (2 << 22);
+            switch (command)
+            {
+                case 1:
+                    part[npart]->partefx[nFX]->changeeffect(nType);
+                    break;
+                case 4:
+                    setPsysefxvol(npart, nPar, value);
+                    break;
+                case 8:
+                    part[npart]->partefx[nFX]->changepreset(value);
+                    break;
+            }
+            break;
+        default:
+            switch (command)
+            {
+                case 1:
+                    sysefx[nFX]->changeeffect(nType);
+                    break;
+                case 4:
+                    setPsysefxsend(nFX, nPar, value);
+                    break;
+                case 8:
+                    sysefx[nFX]->changepreset(value);
+                    break;
+            }
+            break;
+    }
+    GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateEffects, data);
 }
 
 
@@ -712,6 +783,11 @@ void SynthEngine::SetPartDestination(unsigned char npart, unsigned char dest)
 }
 
 
+void SynthEngine::SetPartPortamento(int npart, bool state)
+{
+    part[npart]->ctl->portamento.portamento = state;
+}
+    
 /*
  * This should really be in MiscFuncs but it has two runtime calls
  * and I can't work out a way to implement that :(
@@ -910,12 +986,12 @@ void SynthEngine::ListSettings(list<string>& msg_buf)
     else
         msg_buf.push_back("  No paths set");
     
-    msg_buf.push_back("  Current part " + asString(Runtime.currentPart));
-    
-    msg_buf.push_back("  Number of availalbe parts "
+    msg_buf.push_back("  Number of available parts "
                     + asString(Runtime.NumAvailableParts));
     
-    msg_buf.push_back("  Current MIDI channel " + asString(Runtime.currentChannel));
+    msg_buf.push_back("  Current part " + asString(Runtime.currentPart));
+    
+    msg_buf.push_back("  Current part's channel " + asString((int)part[Runtime.currentPart]->Prcvchn));
     
     if (Runtime.midi_bank_root > 119)
         msg_buf.push_back("  MIDI Root Change off");
@@ -946,6 +1022,7 @@ void SynthEngine::ListSettings(list<string>& msg_buf)
         
     msg_buf.push_back("  ALSA MIDI " + Runtime.alsaMidiDevice);
     msg_buf.push_back("  ALSA AUDIO " + Runtime.alsaAudioDevice);
+    msg_buf.push_back("  jack MIDI " + Runtime.jackMidiDevice);
     msg_buf.push_back("  Jack server " + Runtime.jackServer);
 
     if (Runtime.consoleMenuItem)
@@ -1041,7 +1118,7 @@ void SynthEngine::SetSystemValue(int type, int value)
                 else
                 {
                     Runtime.midi_bank_root = value;
-                    GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateConfig, 5);
+                    GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateConfig, 4);
                 }
             }
             if (value == 128) // but still report the setting
@@ -1064,7 +1141,7 @@ void SynthEngine::SetSystemValue(int type, int value)
                 else
                 {
                     Runtime.midi_bank_C = value;
-                    GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateConfig, 5);
+                    GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateConfig, 4);
                 }
             }
             if (value == 0)
@@ -1084,7 +1161,7 @@ void SynthEngine::SetSystemValue(int type, int value)
             if (value != Runtime.EnableProgChange)
             {
                 Runtime.EnableProgChange = value;
-                GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateConfig, 5);
+                GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateConfig, 4);
             }
             break;
             
@@ -1097,7 +1174,7 @@ void SynthEngine::SetSystemValue(int type, int value)
             if (value != Runtime.enable_part_on_voice_load)
             {
                 Runtime.enable_part_on_voice_load = value;
-                GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateConfig, 5);
+                GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateConfig, 4);
             }
             break;
             
@@ -1115,7 +1192,7 @@ void SynthEngine::SetSystemValue(int type, int value)
                 else
                 {
                     Runtime.midi_upper_voice_C = value;
-                    GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateConfig, 5);
+                    GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateConfig, 4);
                 }
             }
             if (value == 128) // but still report the setting
@@ -1143,227 +1220,6 @@ void SynthEngine::SetSystemValue(int type, int value)
 }
 
 
-// Provides a command line link to system values
-
-int SynthEngine::commandSet(char *point)
-{
-    int error = 0;
-    int tmp;
-    int partnum = Runtime.currentPart;
-
-    if (matchWord(point, "ccroot"))
-    {
-        point = skipChars(point);
-        if (point[0] != 0)
-            SetSystemValue(113, string2int(point));
-        else
-            error = 1;
-    }
-    else if (matchWord(point, "ccbank"))
-    {
-        point = skipChars(point);
-        if (point[0] != 0)
-            SetSystemValue(114, string2int(point));
-        else
-            error = 1;
-    }
-    else if (matchWord(point, "root"))
-    {
-        point = skipChars(point);
-        if (point[0] != 0)
-            SetBankRoot(string2int(point));
-        else
-            error = 1;
-    }
-    else if (matchWord(point, "bank"))
-    {
-        point = skipChars(point);
-        if (point[0] != 0)
-            SetBank(string2int(point));
-        else
-            error = 1;
-    }
-    else if (matchWord(point, "part"))
-    {
-        point = skipChars(point);
-        if (point[0] == 0)
-            return 1;
-        if (isdigit(point[0]))
-        {
-            partnum = string2int(point);
-            if (partnum >= Runtime.NumAvailableParts)
-            {
-                Runtime.Log("Part number too high");
-                return 0;
-            }
-            point = skipChars(point);
-            Runtime.currentPart = partnum;
-        }
-        if (point[0] == 0)
-        {
-            Runtime.Log("Part number set to " + asString(partnum));
-            return 0;
-        }
-        else if (matchWord(point, "program"))
-        {
-            point = skipChars(point);
-            if (point[0] != 0) // force part not channel number
-                SetProgram(partnum | 0x80, string2int(point));
-            else
-                error = 1;
-        }
-        else if (matchWord(point, "channel"))
-        {
-            point = skipChars(point);
-            if (point[0] != 0)
-            {
-                tmp = string2int(point);
-                SetPartChan(partnum, tmp);
-                if (tmp < NUM_MIDI_CHANNELS)
-                    Runtime.Log("Part " + asString((int) partnum) + " set to channel " + asString(tmp));
-                else
-                    Runtime.Log("Part " + asString((int) partnum) + " set to no MIDI"); 
-            }
-            else
-                error = 1;
-        }
-        else if (matchWord(point, "destination"))
-        {
-            point = skipChars(point);
-            int dest = point[0] - 48;
-            if (dest > 0 and dest < 4)
-            {
-                partonoff(partnum, 1);
-                SetPartDestination(partnum, dest);
-            }
-            else
-                error = 4;
-        }
-        else
-            error = 2;
-    }
-    else if (matchWord(point, "program"))
-    {
-        point = skipChars(point);
-        if (point[0] == '0')
-            SetSystemValue(115, 0);
-        else
-            SetSystemValue(115, 127);
-    }
-    else if (matchWord(point, "activate"))
-    {
-        point = skipChars(point);
-        if (point[0] == '0')
-            SetSystemValue(116, 0);
-        else
-            SetSystemValue(116, 127);
-    }
-    else if (matchWord(point, "extend"))
-    {
-        point = skipChars(point);
-        if (point[0] != 0)
-            SetSystemValue(117, string2int(point));
-        else
-            error = 1;
-    }
-    else if (matchWord(point, "available"))
-    {
-        point = skipChars(point);
-        if (point[0] != 0)
-            SetSystemValue(118, string2int(point));
-        else
-            error = 1;
-    }
-    else if (matchWord(point, "reports"))
-    {
-        point = skipChars(point);
-        if (point[0] == '1')
-            SetSystemValue(100, 127);
-        else
-            SetSystemValue(100, 0);
-    }
-    else if (matchWord(point, "volume"))
-    {
-        point = skipChars(point);
-        if (point[0] != 0)
-            SetSystemValue(7, string2int(point));
-        else
-            error = 1;
-    }
-    else if (matchWord(point, "shift"))
-    {
-        point = skipChars(point);
-        if (point[0] != 0)
-            SetSystemValue(2, string2int(point));
-        else
-            error = 1;
-    }
-    else if (matchWord(point, "defaults"))
-    {
-        resetAll();
-        GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateMaster, 0);
-
-    }
-    
-    else if (matchWord(point, "alsa"))
-    {
-        point = skipChars(point);
-        if (matchWord(point, "midi"))
-        {
-            point = skipChars(point);
-            if (point[0] != 0)
-            {
-                Runtime.alsaMidiDevice = (string) point;
-                Runtime.Log("* Set ALSA MIDI to " + Runtime.alsaMidiDevice);
-            }
-            else
-                error = 1;
-        }
-        else if (matchWord(point, "audio"))
-        {
-            point = skipChars(point);
-            if (point[0] != 0)
-            {
-                Runtime.alsaAudioDevice = (string) point;
-                Runtime.Log("* Set ALSA AUDIO to " + Runtime.alsaAudioDevice);
-            }
-            else
-                error = 1;
-        }
-        else
-            error = 2;
-    }
-    else if (matchWord(point, "jack"))
-    {
-        point = skipChars(point);
-        if (matchWord(point, "server"))
-        {
-            point = skipChars(point);
-            if (point[0] != 0)
-            {
-                Runtime.jackServer = (string) point;
-                Runtime.Log("* Set Jack server to " + Runtime.jackServer);
-            }
-            else
-                error = 1;
-        }
-        else
-            error = 2;
-    }
-    else if (matchWord(point, "vector"))
-    {
-        point = skipChars(point);
-        if (point[0] != 0)
-            error = commandVector(point);
-        else
-            error = 1;
-    }
-    else
-        error = 2;
-    return error; 
-}
-
-
 void SynthEngine::writeRBP(char type, char data0, char data1)
 {
     struct RBP_data block;
@@ -1377,7 +1233,7 @@ void SynthEngine::writeRBP(char type, char data0, char data1)
     unsigned int found;
     unsigned int tries = 0;
 
-    if (jack_ringbuffer_write_space(RBPringbuf) > 0)
+    if (jack_ringbuffer_write_space(RBPringbuf) >= writesize)
     {
         while (towrite && tries < 3)
         {
@@ -1390,104 +1246,8 @@ void SynthEngine::writeRBP(char type, char data0, char data1)
         if (towrite)
             Runtime.Log("Unable to write data to Root/bank/Program");
     }
-}
-
-
-int SynthEngine::commandVector(char *point)
-{
-    static int axis;
-    int error = 0;
-    int tmp;
-    int chan = Runtime.currentChannel;
-    
-    if (isdigit(point[0]))
-    {
-        chan = string2int(point);
-        if (chan >= NUM_MIDI_CHANNELS)
-            return 4;
-        point = skipChars(point);
-        Runtime.currentChannel = chan;
-    }
     else
-        chan = Runtime.currentChannel;
-
-    if (matchWord(point, "off"))
-    {
-        vectorSet(127, chan, 0);
-        return 0;
-    }
-    tmp = point[0] | 32;
-    if (tmp == 32) // would be line end
-        return 2;
-    
-    if (tmp == 'x' || tmp == 'y')
-    {
-        axis = tmp - 'x';
-        ++ point;
-        point = skipSpace(point); // can manage with or without a space
-    }
-    if (matchWord(point, "cc"))
-    {
-        point = skipChars(point);
-        if (point[0] == 0)
-            error = 1;
-        else
-        {
-            tmp = string2int(point);
-            if (!vectorInit(axis, chan, tmp))
-                vectorSet(axis, chan, tmp);
-        } 
-    }
-    else if (matchWord(point, "features"))
-    {
-        point = skipChars(point);
-        if (point[0] == 0)
-            error = 1;
-        else
-        {
-            tmp = string2int(point);
-            if (!vectorInit(axis + 2, chan, tmp))
-                vectorSet(axis + 2, chan, tmp);
-        }
-    }
-    else if (matchWord(point, "program"))
-    {
-        point = skipChars(point);
-        int hand = point[0] | 32;
-        if (point[0] == 'l')
-            hand = 0;
-        else if (point[0] == 'r')
-            hand = 1;
-        else
-            return 2;
-        point = skipChars(point);
-        tmp = string2int(point);
-        if (!vectorInit(axis * 2 + hand + 4, chan, tmp))
-            vectorSet(axis * 2 + hand + 4, chan, tmp);
-    }
-    else
-    {
-        if (!matchWord(point, "control"))
-            return 2;
-        point = skipChars(point);
-        if(isdigit(point[0]))
-        {
-            int cmd = string2int(point) >> 1;
-            if (cmd == 4)
-                cmd = 3; // can't remember how to do this :(
-            if (cmd < 1 || cmd > 3)
-                return 4;
-            point = skipChars(point);
-            if (point[0] == 0)
-                return 1;
-            tmp = string2int(point);
-            if (!vectorInit(axis * 2 + cmd + 7, chan, tmp))
-            vectorSet(axis * 2 + cmd + 7, chan, tmp);
-        }
-        else
-            error = 1;
-    }
-    return error;
+        Runtime.Log("Root/bank/Program buffer full!");
 }
 
 

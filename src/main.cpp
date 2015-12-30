@@ -44,11 +44,8 @@ using namespace std;
 
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <Misc/CmdInterface.h>
 
-#include <signal.h>
-#include <sys/types.h>
-#include <unistd.h>
-//#include "Misc/nsm.h"
 #include "Misc/NSM.H"
 #include "Misc/NSM/Client.H"
 
@@ -64,7 +61,7 @@ void sigterm_exit( int /* sig */ )
     exit(0);
 }
 
-extern void cmdIfaceCommandLoop();
+CmdInterface commandInt;
 
 void mainRegisterAudioPort(SynthEngine *s, int portnum);
 
@@ -344,7 +341,7 @@ bail_out:
 
 void *commandThread(void *arg)
 {
-    cmdIfaceCommandLoop();
+    commandInt.cmdIfaceCommandLoop();
     return 0;
 }
 
