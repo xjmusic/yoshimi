@@ -218,7 +218,7 @@ class MasterUI {selected : {private MiscFuncs}
   Function {make_window()} {} {
     Fl_Window masterwindow {
       label {Yoshimi meets ZynAddSubFX}
-      callback {if (configui->configChanged)
+      callback {if (synth->getRuntime().configChanged)
           {
               int r = fl_choice("Parameters Changed", "Save Changes", "Cancel", "Don't Save");
               switch (r)
@@ -243,7 +243,6 @@ class MasterUI {selected : {private MiscFuncs}
     } {
       Fl_Menu_Bar mastermenu {
         xywh {-7 0 400 25} labelsize 13
-        code0 {if (synth->getRuntime().audioEngine != jack_audio){newinstance->deactivate(); newinstanceid->deactivate();}}
       } {
         Submenu {} {
           label {&Yoshimi} open
@@ -303,7 +302,8 @@ mainCreateNewInstance(forceId);}
                 filename = fl_file_chooser("Load:", "({*.xiz})", NULL, 0);
                 if (filename == NULL)
                     return;
-                int result = synth->part[npart]->loadXMLinstrument(string(filename));
+				// pgm = -1 here because it's not from a bank
+				int result = synth->SetProgramToPart(npart, -1, string(filename));
                 npartcounter->do_callback();
                 updatepanel();
                 if (result == 0)
@@ -1087,12 +1087,12 @@ updatepanel();}
         npartcounter->do_callback();
         return;
     }
-    if (synth->part[npart]->Penabled)
+    if (synth->partonoffRead(npart))
         partui->partgroupui->activate();
     else
         partui->partgroupui->deactivate();
         
-    partui->partGroupEnable->value(synth->part[npart]->Penabled);
+    partui->partGroupEnable->value(synth->partonoffRead(npart));
     partui->partpan->value(synth->part[npart]->Ppanning);
     partui->partvol->value(synth->part[npart]->Pvolume);
     partui->partkeylimit->value(synth->part[npart]->Pkeylimit);

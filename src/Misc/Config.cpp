@@ -117,6 +117,7 @@ Config::Config(SynthEngine *_synth, int argc, char **argv) :
     EnableProgChange(1), // default will be inverted
     consoleMenuItem(0),
     logXMLheaders(0),
+    configChanged(false),
     rtprio(50),
     midi_bank_root(0), // 128 is used as 'disabled'
     midi_bank_C(32),
@@ -278,6 +279,21 @@ string Config::historyFilename(int index)
         return itx->file;
     }
     return string();
+}
+
+bool Config::showQuestionOrCmdWarning(string guiQuestion, string cmdLineWarning, bool bForceCmdLinePositive)
+{
+    bool bRet = false;
+    if(showGui)
+    {
+        bRet = fl_choice("%s, ok?", "No", "Yes", "Cancel", guiQuestion.c_str());
+    }
+    else
+    {
+        bRet = bForceCmdLinePositive;//force positive answer if gui is not used (default behavior)
+        cerr << endl << "----- WARNING! -----" << cmdLineWarning << endl << "----- ^^^^^^^^ -----" << endl;
+    }
+    return bRet;
 }
 
 
@@ -565,10 +581,10 @@ void Config::saveConfig(void)
 
     string resConfigFile = ConfigFile;
 
-    if (!xmltree->saveXMLfile(resConfigFile))
-    {
+    if (xmltree->saveXMLfile(resConfigFile))
+        configChanged = false;
+    else
         Log("Failed to save config to " + resConfigFile);
-    }
     GzipCompression = tmp;
 
     delete xmltree;
@@ -727,7 +743,7 @@ void Config::Log(string msg, bool tostderr)
         cerr << msg << endl;
 }
 
-
+#ifndef YOSHIMI_LV2_PLUGIN
 void Config::StartupReport(MusicClient *musicClient)
 {
     Log(string(argp_program_version));
@@ -767,6 +783,7 @@ void Config::StartupReport(MusicClient *musicClient)
     Log("Period size: " + asString(synth->buffersize));
 }
 
+#endif
 
 void Config::setRtprio(int prio)
 {

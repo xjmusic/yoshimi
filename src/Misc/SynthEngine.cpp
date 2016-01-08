@@ -144,9 +144,11 @@ SynthEngine::~SynthEngine()
     if (fft)
         delete fft;
     pthread_mutex_destroy(&processMutex);
+    sem_destroy(&partlock);
     if (ctl)
         delete ctl;
     getRemoveSynthId(true, uniqueId);
+
 }
 
 
@@ -216,6 +218,8 @@ bool SynthEngine::Init(unsigned int audiosrate, int audiobufsize)
         Runtime.Log("SynthEngine tmpmix allocations failed");
         goto bail_out;
     }
+    
+    sem_init(&partlock, 0, 1);
 
     for (int npart = 0; npart < NUM_MIDI_PARTS; ++npart)
     {
@@ -308,7 +312,7 @@ bool SynthEngine::Init(unsigned int audiosrate, int audiobufsize)
     }
     
     
-    if (!Runtime.startThread(&RBPthreadHandle, _RBPthread, this, true, 1, false))
+    if (!Runtime.startThread(&RBPthreadHandle, _RBPthread, this, true, 7, false))
     {
         Runtime.Log("Failed to start RBP thread");
         goto bail_out;
@@ -425,7 +429,7 @@ void SynthEngine::defaults(void)
         part[npart]->defaults();
         part[npart]->Prcvchn = npart % NUM_MIDI_CHANNELS;
     }
-    partonoff(0, 1); // enable the first part
+    partonoffWrite(0, 1); // enable the first part
     for (int nefx = 0; nefx < NUM_INS_EFX; ++nefx)
     {
         insefx[nefx]->defaults();
@@ -458,7 +462,7 @@ void SynthEngine::NoteOn(unsigned char chan, unsigned char note, unsigned char v
         {
             if (chan == part[npart]->Prcvchn)
             {
-               if (part[npart]->Penabled)
+               if (partonoffRead(npart))
                 {
                     actionLock(lock);
                     part[npart]->NoteOn(note, velocity, keyshift);
@@ -477,7 +481,7 @@ void SynthEngine::NoteOff(unsigned char chan, unsigned char note)
     for (int npart = 0; npart < Runtime.NumAvailableParts; ++npart)
     {
         // mask values 16 - 31 to still allow a note off
-        if (chan == (part[npart]->Prcvchn & 0xef) && part[npart]->Penabled)
+        if (chan == (part[npart]->Prcvchn & 0xef) && partonoffRead(npart))
         {
             actionLock(lock);
             part[npart]->NoteOff(note);
@@ -500,7 +504,7 @@ void SynthEngine::SetController(unsigned char chan, int type, short int par)
         {
             for (npart = 0; npart < Runtime.NumAvailableParts; ++npart)
             {   // Send the controller to all part assigned to the channel
-                if (chan == part[npart]->Prcvchn && part[npart]->Penabled)
+                if (chan == part[npart]->Prcvchn && partonoffRead(npart))
                 {
                     part[npart]->SetController(type, par);
                     if (type == 7 || type == 10) // currently only volume and pan
@@ -684,9 +688,10 @@ void SynthEngine::SetBank(int banknum)
 
 void SynthEngine::SetProgram(unsigned char chan, unsigned short pgm)
 {
-    bool partOK = false;
+    bool partOK = true;
     int npart;
-    if (bank.getname(pgm) < "!") // can't get a program name less than this
+    string fname = bank.getfilename(pgm);
+    if ((fname == "") || (bank.getname(pgm) < "!")) // can't get a program name less than this
         Runtime.Log("No Program " + asString(pgm) + " in this bank");
     else
     {
@@ -696,15 +701,11 @@ void SynthEngine::SetProgram(unsigned char chan, unsigned short pgm)
                 // we don't want upper parts (16 - 63) activiated!
                 if (chan == part[npart]->Prcvchn)
                 {
-                    if (bank.loadfromslot(pgm, part[npart])) // Program indexes start from 0
+                    // all listening parts must succeed
+                    if (!SetProgramToPart(npart, pgm, fname))
                     {
-                        partOK = true; 
-                        if (part[npart]->Penabled == 0 && Runtime.enable_part_on_voice_load != 0)
-                            partonoff(npart, 1);
-                        if (Runtime.showGui && guiMaster && guiMaster->partui
-                                            && guiMaster->partui->instrumentlabel
-                                            && guiMaster->partui->part)
-                            GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePartProgram, npart);
+                        partOK = false;
+                        break;
                     }
                 }
         }
@@ -712,26 +713,43 @@ void SynthEngine::SetProgram(unsigned char chan, unsigned short pgm)
         {
             npart = chan & 0x7f;
             if (npart < Runtime.NumAvailableParts)
-            {
-                partOK = bank.loadfromslot(pgm, part[npart]);
-                if (partOK)
-                {
-                    if (part[npart]->Penabled == 0 && Runtime.enable_part_on_voice_load != 0)
-                        partonoff(npart, 1);
-                    if (Runtime.showGui && guiMaster && guiMaster->partui
-                                        && guiMaster->partui->instrumentlabel
-                                        && guiMaster->partui->part)
-                        GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePartProgram, npart);
-                }
-            }
+                partOK = SetProgramToPart(npart, pgm, fname);
         }
-        if (partOK)
-            Runtime.Log("Loaded " + asString(pgm) + " " + bank.getname(pgm) + " to " + asString(chan & 0x7f));
-        else
+        if (!partOK)
             Runtime.Log("SynthEngine setProgram: Invalid program data");
     }
 }
 
+// for de-duplicating bits in SetProgram() and for calling from everywhere else
+// this replaces bank->loadfromslot for thread safety etc.
+bool SynthEngine::SetProgramToPart(int npart, int pgm, string fname)
+{
+    bool loadOK = false;
+    int enablestate;
+    sem_wait (&partlock);
+    if (Runtime.enable_part_on_voice_load)
+        enablestate = 1;
+    else
+        enablestate = partonoffRead(npart);
+    partonoffWrite(npart, 0);
+    if (part[npart]->loadXMLinstrument(fname))
+    {
+        partonoffWrite(npart, enablestate); // must be here to update gui
+        loadOK = true;
+        // show file instead of program if we got here from Instruments -> Load External...
+        Runtime.Log("Loaded " +
+                    ((pgm == -1) ? fname : asString(pgm) + " \"" + bank.getname(pgm) + "\"")
+                    + " to Part " + asString(npart+1));
+        if (Runtime.showGui && guiMaster && guiMaster->partui
+                            && guiMaster->partui->instrumentlabel
+                            && guiMaster->partui->part)
+            GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePartProgram, npart);
+    }
+    else
+        partonoffWrite(npart, enablestate); // also here to restore failed load state.
+    sem_post (&partlock);
+    return loadOK;
+}
 
 // Set part's channel number
 void SynthEngine::SetPartChan(unsigned char npart, unsigned char nchan)
@@ -918,11 +936,11 @@ void SynthEngine::ListCurrentParts(list<string>& msg_buf)
     msg_buf.push_back(asString(avail) + " parts available");
     for (int npart = 0; npart < NUM_MIDI_PARTS; ++npart)
     {
-        if ((part[npart]->Pname) != "Simple Sound" || (part[npart]->Penabled))
+        if ((part[npart]->Pname) != "Simple Sound" || (partonoffRead(npart)))
         {
             name = "  " + asString(npart);
             dest = part[npart]->Paudiodest;
-            if (!part[npart]->Penabled || npart >= avail)
+            if (!partonoffRead(npart) || npart >= avail)
                 name += " -";
             else if(dest == 1)
                 name += " M";
@@ -1019,9 +1037,34 @@ void SynthEngine::ListSettings(list<string>& msg_buf)
     else
         msg_buf.push_back("  MIDI extended Program Change CC "
                         + asString(Runtime.midi_upper_voice_C));
-        
+    switch (Runtime.midiEngine)
+    {
+        case 2:
+            label = "ALSA";
+            break;
+        case 1:
+            label = "jack";
+            break;
+        default:
+            label = "None";
+            break;
+    }
+    msg_buf.push_back("  Preferred MIDI " + label);
+    switch (Runtime.audioEngine)
+    {
+        case 2:
+            label = "ALSA";
+            break;
+        case 1:
+            label = "jack";
+            break;
+        default:
+            label = "None";
+            break;
+    }
+    msg_buf.push_back("  Preferred audio " + label);
     msg_buf.push_back("  ALSA MIDI " + Runtime.alsaMidiDevice);
-    msg_buf.push_back("  ALSA AUDIO " + Runtime.alsaAudioDevice);
+    msg_buf.push_back("  ALSA audio " + Runtime.alsaAudioDevice);
     msg_buf.push_back("  jack MIDI " + Runtime.jackMidiDevice);
     msg_buf.push_back("  Jack server " + Runtime.jackServer);
 
@@ -1413,10 +1456,19 @@ void SynthEngine::resetAll(void)
 
 
 // Enable/Disable a part
-void SynthEngine::partonoff(int npart, int what)
+void SynthEngine::partonoffLock(int npart, int what)
+{
+    sem_wait (&partlock);
+    partonoffWrite(npart, what);
+    sem_post (&partlock);
+}
+
+
+void SynthEngine::partonoffWrite(int npart, int what)
 {
     if (npart >= Runtime.NumAvailableParts)
         return;
+    
     if (what)
     {
         VUpeak.values.parts[npart] = 1e-9f;
@@ -1431,6 +1483,12 @@ void SynthEngine::partonoff(int npart, int what)
                 insefx[nefx]->cleanup();
         VUpeak.values.parts[npart] = -0.2;
     }
+}
+
+
+bool SynthEngine::partonoffRead(int npart)
+{
+    return (part[npart]->Penabled != 0);
 }
 
 
@@ -1453,29 +1511,33 @@ int SynthEngine::MasterAudio(float *outl [NUM_MIDI_PARTS + 1], float *outr [NUM_
     }
 
     int npart;
-/*    for (npart = 0; npart < (Runtime.NumAvailableParts); ++npart)
-    {
-        if (part[npart]->Penabled)
-        {
-            memset(outl[npart], 0, p_bufferbytes);
-            memset(outr[npart], 0, p_bufferbytes);
-        }
-    }
- * The above was unnecessary as we later do a copy (that completely overwrites
- * the buffers) to just the parts that have a direct output. Only these are
- * sent to jack, so it doesn't matter what the unused ones contain.
- */
+    
     memset(mainL, 0, p_bufferbytes);
     memset(mainR, 0, p_bufferbytes);
-
-    if (!isMuted())
+    
+    if (isMuted())
     {
-
+        for (npart = 0; npart < (Runtime.NumAvailableParts); ++npart)
+        {
+            if (partonoffRead(npart))
+            {
+                memset(outl[npart], 0, p_bufferbytes);
+                memset(outr[npart], 0, p_bufferbytes);
+            }
+        }
+    }
+/* Normally the above is unnecessary, as we later do a copy to just the parts 
+ * that have a direct output. This completely overwrites the buffers.
+ * Only these are sent to jack, so it doesn't matter what the unused ones contain.
+ * However, this doesn't happen when muted, so the buffers then need to be zeroed.
+ */
+    else
+    {
         actionLock(lock);
 
         // Compute part samples and store them ->partoutl,partoutr
         for (npart = 0; npart < Runtime.NumAvailableParts; ++npart)
-            if (part[npart]->Penabled)
+            if (partonoffRead(npart))
                 part[npart]->ComputePartSmps();
 
         // Insertion effects
@@ -1493,7 +1555,7 @@ int SynthEngine::MasterAudio(float *outl [NUM_MIDI_PARTS + 1], float *outr [NUM_
         // Apply the part volumes and pannings (after insertion effects)
         for (npart = 0; npart < Runtime.NumAvailableParts; ++npart)
         {
-            if (!part[npart]->Penabled)
+            if (!partonoffRead(npart))
                 continue;
 
             float oldvol_l = part[npart]->oldvolumel;
@@ -1534,7 +1596,7 @@ int SynthEngine::MasterAudio(float *outl [NUM_MIDI_PARTS + 1], float *outr [NUM_
             // Mix the channels according to the part settings about System Effect
             for (npart = 0; npart < Runtime.NumAvailableParts; ++npart)
             {
-                if (part[npart]->Penabled        // it's enabled
+                if (partonoffRead(npart)        // it's enabled
                  && Psysefxvol[nefx][npart]      // it's sending an output
                  && part[npart]->Paudiodest & 1) // it's connected to the main outs
                 {
@@ -1646,7 +1708,7 @@ int SynthEngine::MasterAudio(float *outl [NUM_MIDI_PARTS + 1], float *outr [NUM_
         // Peak computation for part vu meters
         for (npart = 0; npart < Runtime.NumAvailableParts; ++npart)
         {
-            if (part[npart]->Penabled)
+            if (partonoffRead(npart))
             {
                 for (int idx = 0; idx < p_buffersize; ++idx)
                 {
@@ -1667,7 +1729,7 @@ int SynthEngine::MasterAudio(float *outl [NUM_MIDI_PARTS + 1], float *outr [NUM_
             VUpeak.values.vuOutPeakR = 1e-12f;
             for (npart = 0; npart < Runtime.NumAvailableParts; ++npart)
             {
-                if (part[npart]->Penabled)
+                if (partonoffRead(npart))
                     VUpeak.values.parts[npart] = 1.0e-9;
                 else if (VUpeak.values.parts[npart] < -2.2) // fake peak is a negative value
                     VUpeak.values.parts[npart]+= 2;
@@ -1966,7 +2028,7 @@ bool SynthEngine::getfromXML(XMLwrapper *xml)
             continue;
         part[npart]->getfromXML(xml);
         xml->exitbranch();
-        if (part[npart]->Penabled && (part[npart]->Paudiodest & 2))
+        if (partonoffRead(npart) && (part[npart]->Paudiodest & 2))
             GuiThreadMsg::sendMessage(this, GuiThreadMsg::RegisterAudioPort, npart);
     }
 

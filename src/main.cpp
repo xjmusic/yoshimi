@@ -265,11 +265,14 @@ bool mainCreateNewInstance(unsigned int forceId)
         goto bail_out;
     }
 
+
+    /* this is done in newMusicClient() now! ^^^^^
     if (!(musicClient->Open()))
     {
         synth->getRuntime().Log("Failed to open MusicClient");
         goto bail_out;
     }
+    */
 
     if (!synth->Init(musicClient->getSamplerate(), musicClient->getBuffersize()))
     {
@@ -499,7 +502,8 @@ bail_out:
             delete _synth;
         }
     }
-    tcsetattr(0, TCSANOW, &oldTerm);
+    if(bShowCmdLine)
+        tcsetattr(0, TCSANOW, &oldTerm);
     if (bExitSuccess)
         exit(EXIT_SUCCESS);
     else

@@ -28,6 +28,7 @@
 
 #include <limits.h>
 #include <cstdlib>
+#include <semaphore.h>
 #include <jack/ringbuffer.h>
 
 using namespace std;
@@ -87,6 +88,7 @@ class SynthEngine : private SynthHelper, MiscFuncs
         void SetBankRoot(int rootnum);
         void SetBank(int banknum);
         void SetProgram(unsigned char chan, unsigned short pgm);
+        bool SetProgramToPart(int npart, int pgm, string fname);
         void SetPartChan(unsigned char npart, unsigned char nchan);
         void SetPartDestination(unsigned char npart, unsigned char dest);
         void SetPartPortamento(int npart, bool state);
@@ -108,7 +110,11 @@ class SynthEngine : private SynthHelper, MiscFuncs
         void ShutUp(void);
         void allStop();
         int MasterAudio(float *outl [NUM_MIDI_PARTS + 1], float *outr [NUM_MIDI_PARTS + 1], int to_process = 0);
-        void partonoff(int npart, int what);
+        void partonoffLock(int npart, int what);
+        void partonoffWrite(int npart, int what);
+        bool partonoffRead(int npart);
+        sem_t partlock;
+        
         void Mute(void) { __sync_or_and_fetch(&muted, 0xFF); }
         void Unmute(void) { __sync_and_and_fetch(&muted, 0); }
         bool isMuted(void) { return (__sync_add_and_fetch(&muted, 0) != 0); }

@@ -40,6 +40,8 @@ string basics[] = {
     "  vectors",                    "settings for all enabled vectors",
     "  setup",                      "dynamic settings",
     "  effects [s]",                "effect types ('all' include preset numbers and names)",
+    "load instrument <s>",          "load an instrument to current part from named file",
+    "save instrument <s>",          "save current part to named file",
     "load patchset <s>",            "load a complete set of instruments from named file",
     "save patchset <s>",            "save a complete set of instruments to named file",
     "save setup",                   "save dynamic settings",
@@ -50,51 +52,63 @@ string basics[] = {
     "  reports [n]",                "report destination (1 GUI console, other stderr)",
     "  root <n>",                   "current root path to ID",
     "  bank <n>",                   "current bank to ID",
-    "  system effects [n]",         "system effects for editing",
-    "  - send <n2> <n3>",           "send system effect to effect n2 at volume n3",
-    "  - prefix <n2>",              "set effect preset to number n2",
-    "  insert effects [n1]",        "insertion effects for editing",
-    "  - send <s>/<n2>",            "set where: master, off or part number",
-    "  - preset <n2>",              "set numbered effect preset to n2",
-    "  part [n1]",                  "set part ID operations",
-    "  - enable",                   "enables the part",
-    "  - disable",                  "disables the part",
-    "  - volume <n2>",              "volume",
-    "  - pan <n2>",                 "panning",
-    "  - velocity <n2>",            "velocity sensing sensitivity",
-    "  - offset <n2>",              "velocity sense offest",
-    "  - portamento <s>",           "portamento (en - enable, other - disable",
-    "  - mode <s>",                 "key mode (poly, mono, legato)",
-    "  - note <n2>",                "note polyphony",
-    "  - shift <n2>",               "key shift semitones (64 no shift)",
-    "  - min <n2>",                 "minimum MIDI note value",
-    "  - max <n2>",                 "maximum MIDI note value",
-    "  - effects [n2]",             "effects for editing",
-    "  - - type <s>",               "the effect type",
-    "  - - send <n3> <n4>",         "send part effect to system effect n3 at volume n4",
-    "  - - preset <n3>",            "set numbered effect preset to n3",
-    "  - program <n2>",             "loads instrument ID",
-    "  - name <s>",                 "sets the display name the part can be saved with",
-    "  - channel <n2>",             "MIDI channel (> 15 disables)",
-    "  - destination <s2>",         "jack audio destination (main, part, both)",
-    "  ccroot <n>",                 "CC for root path changes (> 119 disables)",
-    "  ccbank <n>",                 "CC for bank changes (0, 32, other disables)",
-    "  program <n>",                "MIDI program change enabled (0 off, other on)",
-    "  activate <n>",               "MIDI program change activates part (0 off, other on)",
-    "  extend <n>",                 "CC for extended MIDI program change (> 119 disables)",
-    "  available <n>",              "available parts (16, 32, 64)",
-    "  volume <n>",                 "master volume",
-    "  shift <n>",                  "master key shift semitones (64 no shift)",
-    "  alsa midi <s>",              "* name of alsa MIDI source",
-    "  alsa audio <s>",             "* name of alsa hardware device",
-    "  jack midi <s>",              "* name of jack MIDI source",
-    "  jack server <s>",            "* jack server name",
-    "  vector [n1]",                "vector CHANNEL, operations",
-    "  - [x/y] cc <n2>",            "CC n2 is used for CHANNEL X or Y axis sweep",
-    "  - [x/y] features <n2>",      "sets CHANNEL X or Y features",
-    "  - [x/y] program [l/r] <n2>", "X or Y program change ID for CHANNEL L or R part",
-    "  - [x/y] control <n2> <n3>",  "sets n3 CC to use for X or Y feature n2 (2, 4, 8)",
-    "  - off",                      "disable vector for CHANNEL",
+    "end"
+};
+
+string toplist [] = {
+    "system effects [n]",         "system effects for editing",
+    "- send <n2> <n3>",           "send system effect to effect n2 at volume n3",
+    "- preset <n2>",              "set effect preset to number n2",
+    "insert effects [n1]",        "insertion effects for editing",
+    "- send <s>/<n2>",            "set where: master, off or part number",
+    "- preset <n2>",              "set numbered effect preset to n2",
+    "program <n>",                "MIDI program change enabled (0 off, other on)",
+    "activate <n>",               "MIDI program change activates part (0 off, other on)",
+    "ccroot <n>",                 "CC for root path changes (> 119 disables)",
+    "ccbank <n>",                 "CC for bank changes (0, 32, other disables)",
+    "extend <n>",                 "CC for extended MIDI program change (> 119 disables)",
+    "available <n>",              "available parts (16, 32, 64)",
+    "volume <n>",                 "master volume",
+    "shift <n>",                  "master key shift semitones (64 no shift)",
+    "preferred midi <s>",         "* MIDI connection type jack/alsa",
+    "preferred audio <s>",        "* audio connection type jack/alsa",
+    "alsa midi <s>",              "* name of alsa MIDI source",
+    "alsa audio <s>",             "* name of alsa hardware device",
+    "jack midi <s>",              "* name of jack MIDI source",
+    "jack server <s>",            "* jack server name",
+    "end"
+};
+
+string vectlist [] = {
+    "[x/y] cc <n2>",            "CC n2 is used for CHANNEL X or Y axis sweep",
+    "[x/y] features <n2>",      "sets CHANNEL X or Y features",
+    "[x/y] program [l/r] <n2>", "X or Y program change ID for CHANNEL L or R part",
+    "[x/y] control <n2> <n3>",  "sets n3 CC to use for X or Y feature n2 (2, 4, 8)",
+    "off",                      "disable vector for CHANNEL",
+    "end"
+};
+
+
+string partlist [] = {
+    "enable",                   "enables the part",
+    "disable",                  "disables the part",
+    "volume <n2>",              "volume",
+    "pan <n2>",                 "panning",
+    "velocity <n2>",            "velocity sensing sensitivity",
+    "offset <n2>",              "velocity sense offest",
+    "portamento <s>",           "portamento (en - enable, other - disable",
+    "mode <s>",                 "key mode (poly, mono, legato)",
+    "note <n2>",                "note polyphony",
+    "shift <n2>",               "key shift semitones (64 no shift)",
+    "min <n2>",                 "minimum MIDI note value",
+    "max <n2>",                 "maximum MIDI note value",
+    "effects [n2]",             "effects for editing",
+    "- type <s>",               "the effect type",
+    "- preset <n3>",            "set numbered effect preset to n3",
+    "- send <n3> <n4>",         "send part to system effect n3 at volume n4",    "program <n2>",             "loads instrument ID",
+    "name <s>",                 "sets the display name the part can be saved with",
+    "channel <n2>",             "MIDI channel (> 15 disables)",
+    "destination <s2>",         "jack audio destination (main, part, both)",
     "end"
 };
 
@@ -181,42 +195,48 @@ bool CmdInterface::query(string text, bool priority)
 }
 
 
-bool CmdInterface::helpList(string *commands)
+void CmdInterface::helpLoop(list<string>& msg, string *commands, int indent)
 {
-    int messagelist = 0;
-    switch (messagelist)
-    {
-        case 0:
-            commands = basics;
-            break;
- /*       case 0x11:
-            commands = subsynth;
-            break;
-        case 0x21:
-            commands = subsynth;
-            break;
-        case 0x41:
-            commands = subsynth;
-            break;*/
-        }
-        
-    if (!matchnMove(1, point, "help") && !matchnMove(1, point, "?"))
-        return false;
-
     int word = 0;
+    int spaces = 30 - indent;
     string left;
     string right;
+    string dent;
     string blanks;
-    list<string>msg;
-    msg.push_back("Commands:");
+    
     while (commands[word] != "end")
     {
         left = commands[word];
-        msg.push_back("  " + left + blanks.assign<int>(30 - left.length(), ' ') + "- " + commands[word + 1]);
+        msg.push_back(dent.assign<int>(indent, ' ') + left + blanks.assign<int>(spaces - left.length(), ' ') + "- " + commands[word + 1]);
         word += 2;
     }
+}
 
-    msg.push_back("'*' entries need to be saved and Yoshimi restarted to activate");
+
+bool CmdInterface::helpList()
+{
+    if (!matchnMove(1, point, "help") && !matchnMove(1, point, "?"))
+        return false;
+    list<string>msg;
+    msg.push_back("Commands:");
+    helpLoop(msg, basics, 2);
+    
+    if (!bitTest(level, vect_lev))
+        msg.push_back("    part [n1]                 - set part ID operations");
+    if (bitTest(level, part_lev))
+        helpLoop(msg, partlist, 6);
+    else
+        msg.push_back("    vector [n1]               - vector CHANNEL, operations");
+    
+    if (bitTest(level, vect_lev))
+        helpLoop(msg, vectlist, 6);        
+
+    if (level <= 3)
+    {
+        helpLoop(msg, toplist, 4);
+        msg.push_back("'*' entries need to be saved and Yoshimi restarted to activate");
+    }
+    
     if (synth->getRuntime().consoleMenuItem)
         // we need this in case someone is working headless
         cout << "\nset reports [n] - set report destination (1 GUI console, other stderr)\n\n";
@@ -283,7 +303,6 @@ int CmdInterface::effects(int level)
     int category;
     int par;
     int value;
-    int data;
     
     string dest = "";
     bool flag;
@@ -699,14 +718,14 @@ int CmdInterface::commandPart(bool justSet)
         return tmp;
     if (matchnMove(2, point, "enable"))
     {
-        synth->partonoff(npart, 1);
+        synth->partonoffLock(npart, 1);
         Runtime.Log("Part enabled");
         GuiThreadMsg::sendMessage(synth, GuiThreadMsg::UpdatePanelItem, npart);
         reply = done_msg;
     }
     else if (matchnMove(2, point, "disable"))
     {
-        synth->partonoff(npart, 0);
+        synth->partonoffLock(npart, 0);
         Runtime.Log("Part disabled");
         GuiThreadMsg::sendMessage(synth, GuiThreadMsg::UpdatePanelItem, npart);
         reply = done_msg;
@@ -748,7 +767,7 @@ int CmdInterface::commandPart(bool justSet)
             dest = 3;
         if (dest > 0)
         {
-            synth->partonoff(npart, 1);
+            synth->partonoffWrite(npart, 1);
             synth->SetPartDestination(npart, dest);
             reply = done_msg;
         }
@@ -864,6 +883,7 @@ int CmdInterface::commandSet()
     Config &Runtime = synth->getRuntime();
     int reply = todo_msg;
     int tmp;
+    string name;
 
     if (matchnMove(4, point, "yoshimi"))
     {
@@ -880,26 +900,16 @@ int CmdInterface::commandSet()
         return done_msg;
     }
         
-    if (matchnMove(3, point, "ccroot"))
+    else if (matchnMove(1, point, "reports"))
     {
-        if (point[0] != 0)
-        {
-            synth->SetSystemValue(113, string2int(point));
-            reply = done_msg;
-        }
+        if (point[0] == '1')
+            synth->SetSystemValue(100, 127);
         else
-            reply = value_msg;
+            synth->SetSystemValue(100, 0);
+        reply = done_msg;
+        Runtime.configChanged = true;
     }
-    else if (matchnMove(3, point, "ccbank"))
-    {
-        if (point[0] != 0)
-        {
-            synth->SetSystemValue(114, string2int(point));
-            reply = done_msg;
-        }
-        else
-            reply = value_msg;
-    }
+    
     else if (matchnMove(1, point, "root"))
     {
         if (point[0] != 0)
@@ -976,28 +986,92 @@ int CmdInterface::commandSet()
         else
             synth->SetSystemValue(116, 127);
     }
+    if (matchnMove(3, point, "ccroot"))
+    {
+        if (point[0] != 0)
+        {
+            synth->SetSystemValue(113, string2int(point));
+            reply = done_msg;
+            Runtime.configChanged = true;
+        }
+        else
+            reply = value_msg;
+    }
+    else if (matchnMove(3, point, "ccbank"))
+    {
+        if (point[0] != 0)
+        {
+            synth->SetSystemValue(114, string2int(point));
+            reply = done_msg;
+            Runtime.configChanged = true;
+        }
+        else
+            reply = value_msg;
+    }
     else if (matchnMove(1, point, "extend"))
     {
         if (point[0] != 0)
+        {
             synth->SetSystemValue(117, string2int(point));
+            reply = done_msg;
+            Runtime.configChanged = true;
+        }
         else
             reply = value_msg;
     }
     else if (matchnMove(1, point, "available"))
     {
         if (point[0] != 0)
+        {
             synth->SetSystemValue(118, string2int(point));
+            reply = done_msg;
+            Runtime.configChanged = true;
+        }
         else
             reply = value_msg;
     }
-    else if (matchnMove(1, point, "reports"))
+    else if (matchnMove(3, point, "preferred"))
     {
-        if (point[0] == '1')
-            synth->SetSystemValue(100, 127);
+        name = " set to ";
+        if (matchnMove(1, point, "midi"))
+        {
+            name = "midi" + name;
+            if (matchnMove(1, point, "alsa"))
+            {
+                Runtime.midiEngine = (midi_drivers) 2;
+                name += "alsa";
+            }
+            else if (matchnMove(1, point, "jack"))
+            {
+                Runtime.midiEngine = (midi_drivers) 1;
+                name += "jack";
+            }
+            else
+                return value_msg;
+        }
+        else if (matchnMove(1, point, "audio"))
+        {
+            name = "audio" + name;
+            if (matchnMove(1, point, "alsa"))
+            {
+                Runtime.audioEngine = (audio_drivers) 2;
+                name += "alsa";
+            }
+            else if (matchnMove(1, point, "jack"))
+            {
+                Runtime.audioEngine = (audio_drivers) 1;
+                name += "jack";
+            }
+            else
+                return value_msg;
+        
+        }
         else
-            synth->SetSystemValue(100, 0);
+            return opp_msg;
+        Runtime.Log("Preferred " + name);
+        Runtime.configChanged = true;
+        return done_msg;
     }
-    
     else if (matchnMove(1, point, "alsa"))
     {
         if (matchnMove(1, point, "midi"))
@@ -1006,6 +1080,7 @@ int CmdInterface::commandSet()
             {
                 Runtime.alsaMidiDevice = (string) point;
                 Runtime.Log("* ALSA MIDI set to " + Runtime.alsaMidiDevice);
+                Runtime.configChanged = true;
             }
             else
                 reply = value_msg;
@@ -1016,6 +1091,7 @@ int CmdInterface::commandSet()
             {
                 Runtime.alsaAudioDevice = (string) point;
                 Runtime.Log("* ALSA AUDIO set to " + Runtime.alsaAudioDevice);
+                Runtime.configChanged = true;
             }
             else
                 reply = value_msg;
@@ -1034,6 +1110,7 @@ int CmdInterface::commandSet()
             {
                 Runtime.jackMidiDevice = (string) point;
                 Runtime.Log("* jack MIDI set to " + Runtime.jackMidiDevice);
+                Runtime.configChanged = true;
             }
             else
                 reply = value_msg;
@@ -1044,6 +1121,7 @@ int CmdInterface::commandSet()
             {
                 Runtime.jackServer = (string) point;
                 Runtime.Log("* Jack server set to " + Runtime.jackServer);
+                Runtime.configChanged = true;
             }
             else
                 reply = value_msg;
@@ -1076,14 +1154,17 @@ bool CmdInterface::cmdIfaceProcessCommand()
     int ID;
     int reply = todo_msg;
     int tmp;
-    string *commands = NULL;
     point = cCmd;
     point = skipSpace(point); // just to be sure
     list<string> msg;
 
     if (matchnMove(2, point, "exit"))
     {
-        if (query("All data will be lost. Still exit", false))
+        if (Runtime.configChanged)
+            replyString = "System config has been changed. Still exit";
+        else
+            replyString = "All data will be lost. Still exit";
+        if (query(replyString, false))
         {
             Runtime.runSynth = false;
             return true;
@@ -1127,13 +1208,13 @@ bool CmdInterface::cmdIfaceProcessCommand()
         if (point[0] == 0)
             return false;
     }
-    if (helpList(commands))
+    if (helpList())
         return false;
     if (matchnMove(2, point, "stop"))
         synth->allStop();
     else if (matchnMove(1, point, "list"))
     {
-        if (matchnMove(1, point, "instrument"))
+        if (matchnMove(1, point, "instruments"))
         {
             if (point[0] == 0)
                 ID = 255;
@@ -1142,7 +1223,7 @@ bool CmdInterface::cmdIfaceProcessCommand()
             synth->ListInstruments(ID, msg);
             synth->cliOutput(msg, LINES);
         }
-        else if (matchnMove(1, point, "bank"))
+        else if (matchnMove(1, point, "banks"))
         {
             if (point[0] == 0)
                 ID = 255;
@@ -1151,7 +1232,7 @@ bool CmdInterface::cmdIfaceProcessCommand()
             synth->ListBanks(ID, msg);
             synth->cliOutput(msg, LINES);
         }
-        else if (matchnMove(1, point, "vector"))
+        else if (matchnMove(1, point, "vectors"))
         {
             synth->ListVectors(msg);
             synth->cliOutput(msg, LINES);
@@ -1199,7 +1280,9 @@ bool CmdInterface::cmdIfaceProcessCommand()
             {
                 GuiThreadMsg::sendMessage(synth, GuiThreadMsg::UpdatePaths, 0);
                 Runtime.Log("Added new root ID " + asString(found) + " as " + (string) point);
+                Runtime.configChanged = true;
             }
+            reply = done_msg;
         }
         else if (matchnMove(2, point, "remove"))
         {
@@ -1214,7 +1297,9 @@ bool CmdInterface::cmdIfaceProcessCommand()
                     synth->getBankRef().removeRoot(rootID);
                     GuiThreadMsg::sendMessage(synth, GuiThreadMsg::UpdatePaths, 0);
                     Runtime.Log("Removed " + rootname);
+                    Runtime.configChanged = true;
                 }
+                reply = done_msg;
             }
             else
                 reply = value_msg;
@@ -1228,7 +1313,7 @@ bool CmdInterface::cmdIfaceProcessCommand()
 
     else if (matchnMove(2, point, "load"))
     {
-        if (matchnMove(1, point, "patchset") )
+        if (matchnMove(1, point, "patchset"))
         {
             if (point[0] == 0)
                 reply = value_msg;
@@ -1239,7 +1324,15 @@ bool CmdInterface::cmdIfaceProcessCommand()
                     Runtime.Log("At least one instrument is named 'Simple Sound'. This should be changed before resave");
                 else if  (loadResult == 1)
                     Runtime.Log((string) point + " loaded");
+                reply = done_msg;
             }
+        }
+        else if (matchnMove(1, point, "instrument"))
+        {
+            if (point[0] == 0)
+                reply = value_msg;
+            else if (synth->SetProgramToPart(npart, -1, (string) point))
+                reply = done_msg;
         }
         else
         {
@@ -1256,11 +1349,34 @@ bool CmdInterface::cmdIfaceProcessCommand()
                 reply = value_msg;
             else
             {
-                int saveResult = synth->saveXML((string) point);
-                if (!saveResult)
+                replyString = setExtension((string) point, "xmz");
+                tmp = synth->saveXML(replyString);
+                if (!tmp)
                     Runtime.Log("Could not save " + (string) point);
                 else
-                    Runtime.Log((string) point + " saved");
+                    Runtime.Log("Saved " + replyString);
+            }
+        }
+        else if (matchnMove(1, point, "instrument"))
+        {
+            if (synth->part[npart]->Pname == "Simple Sound")
+            {
+                Runtime.Log("Nothing to save!");
+                reply = done_msg;
+            }
+            else if (point[0] == 0)
+                reply = value_msg;
+            else
+            {
+                replyString = setExtension((string) point, "xiz");
+                synth->actionLock(lockmute);
+                tmp = synth->part[npart]->saveXML(replyString);
+                synth->actionLock(unlock);
+                if (tmp)
+                    Runtime.Log("Saved part " + asString(npart) + "  instrument " + (string) synth->part[npart]->Pname + "  as " +replyString);
+                else
+                    Runtime.Log("Failed to save " + replyString);
+                reply = done_msg;
             }
         }
         else

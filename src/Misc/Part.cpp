@@ -26,6 +26,7 @@
 
 #include <cstring>
 #include <cmath>
+#include <semaphore.h>
 
 using namespace std;
 
@@ -178,7 +179,8 @@ void Part::defaultsinstrument(void)
 // Cleanup the part
 void Part::cleanup(void)
 {
-    Mute();
+    int enablepart = Penabled;
+    Penabled = 0;
     for (int k = 0; k < POLIPHONY; ++k)
         KillNotePos(k);
     memset(partoutl, 0, synth->bufferbytes);
@@ -195,7 +197,7 @@ void Part::cleanup(void)
         memset(partfxinputr[n], 0, synth->bufferbytes);
 
     }
-    Unmute();
+    Penabled = enablepart;
 }
 
 
@@ -1241,11 +1243,9 @@ int Part::loadXMLinstrument(string filename)
         synth->getRuntime().Log(filename + " is not an instrument file");
         return 0;
     }
-    Mute();
     defaultsinstrument();
     getfromXMLinstrument(xml);
     applyparameters();
-    Unmute();
     xml->exitbranch();
     delete xml;
     if (synth->getRuntime().SimpleCheck)
