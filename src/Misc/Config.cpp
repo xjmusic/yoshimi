@@ -62,7 +62,7 @@ static char prog_doc[] =
     "Copyright 2002-2009 Nasca Octavian Paul and others, "
     "Copyright 2009-2011 Alan Calvert, "
     "Copyright 20012-2013 Jeremy Jongepier and others, "
-    "Copyright 20014-2015 Will Godfrey and others";
+    "Copyright 20014-2016 Will Godfrey and others";
 
 const char* argp_program_version = "Yoshimi " YOSHIMI_VERSION;
 
@@ -71,8 +71,10 @@ static struct argp_option cmd_options[] = {
     {"alsa-midi",         'a',  "<device>",   1,  "use alsa midi input" },
     {"define-root",       'D',  "<path>",     0,  "define path to new bank root"},
     {"buffersize",        'b',  "<size>",     0,  "set internal buffer size" },
-    {"no-gui",            'i',  NULL,         0,  "no gui"},
-    {"no-cmdline",        'c',  NULL,         0,  "don't show command line interface"},
+    {"no-gui",            'i',  NULL,         0,  "disable gui"},
+    {"gui",               'I',  NULL,         0,  "enable gui"},
+    {"no-cmdline",        'c',  NULL,         0,  "disable command line interface"},
+    {"cmdline",           'C',  NULL,         0,  "enable command line interface"},
     {"jack-audio",        'J',  "<server>",   1,  "use jack audio output" },
     {"jack-midi",         'j',  "<device>",   1,  "use jack midi input" },
     {"autostart-jack",    'k',  NULL,         0,  "auto start jack server" },
@@ -99,6 +101,7 @@ Config::Config(SynthEngine *_synth, int argc, char **argv) :
     Oscilsize(512),
     runSynth(true),
     showGui(true),
+    showCLI(true),
     VirKeybLayout(1),
     audioEngine(DEFAULT_AUDIO),
     midiEngine(DEFAULT_MIDI),
@@ -149,7 +152,7 @@ Config::Config(SynthEngine *_synth, int argc, char **argv) :
     //which befaves exactly the same when flag FE_TOWARDZERO is set
 
     cerr.precision(4);
-    deadObjects = new BodyDisposal();    
+    deadObjects = new BodyDisposal();
     bRuntimeSetupCompleted = Setup(argc, argv);
 }
 
@@ -492,9 +495,9 @@ bool Config::extractConfigData(XMLwrapper *xml)
 
     audioEngine = (audio_drivers)xml->getpar("audio_engine", audioEngine, no_audio, alsa_audio);
     midiEngine = (midi_drivers)xml->getpar("midi_engine", midiEngine, no_midi, alsa_midi);
+    showGui = xml->getpar("enable_gui", showGui, 0, 1);
+    showCLI = xml->getpar("enable_CLI", showCLI, 0, 1);
 
-    // get bank dirs
-    synth->getBankRef().parseConfigFile(xml);
 
     // get preset dirs
     int count = 0;
@@ -561,6 +564,9 @@ bool Config::extractConfigData(XMLwrapper *xml)
         xml->exitbranch();
     }
 
+    // get bank dirs
+    synth->getBankRef().parseConfigFile(xml);
+    
     xml->exitbranch(); // CONFIGURATION
     return true;
 }
@@ -607,8 +613,8 @@ void Config::addConfigXML(XMLwrapper *xmltree)
     xmltree->addpar("virtual_keyboard_layout", VirKeybLayout);
     xmltree->addpar("audio_engine", synth->getRuntime().audioEngine);
     xmltree->addpar("midi_engine", synth->getRuntime().midiEngine);
-
-    synth->getBankRef().saveToConfigFile(xmltree);
+    xmltree->addpar("enable_gui", synth->getRuntime().showGui);
+    xmltree->addpar("enable_CLI", synth->getRuntime().showCLI);
 
     for (int i = 0; i < MAX_PRESETS; ++i)
         if (presetsDirlist[i].size())
@@ -647,6 +653,8 @@ void Config::addConfigXML(XMLwrapper *xmltree)
         }
         xmltree->endbranch();
     }
+    synth->getBankRef().saveToConfigFile(xmltree);
+
     xmltree->endbranch(); // CONFIGURATION
 }
 
@@ -715,6 +723,8 @@ bool Config::extractRuntimeData(XMLwrapper *xml)
     audioDevice = xml->getparstr("audio_device");
     midiEngine = (midi_drivers)xml->getpar("midi_engine", DEFAULT_MIDI, no_midi, alsa_midi);
     midiDevice = xml->getparstr("midi_device");
+    showGui = xml->getpar("enable_gui", showGui, 0, 1);
+    showCLI = xml->getpar("enable_CLI", showCLI, 0, 1);
     nameTag = xml->getparstr("name_tag");
     CurrentXMZ = xml->getparstr("current_xmz");
     xml->exitbranch();
@@ -729,6 +739,8 @@ void Config::addRuntimeXML(XMLwrapper *xml)
     xml->addparstr("audio_device", audioDevice);
     xml->addpar("midi_engine", midiEngine);
     xml->addparstr("midi_device", midiDevice);
+    xml->addpar("enable_gui", showGui);
+    xml->addpar("enable_CLI", showCLI);
     xml->addparstr("name_tag", nameTag);
     xml->addparstr("current_xmz", CurrentXMZ);
     xml->endbranch();
@@ -1054,6 +1066,7 @@ static error_t parse_cmds (int key, char *arg, struct argp_state *state)
         case 'l': settings->paramsLoad = string(arg); break;
         case 'L': settings->instrumentLoad = string(arg); break;
         case 'A':
+            settings->configChanged = true;
             settings->audioEngine = alsa_audio;
             if (arg)
                 settings->audioDevice = string(arg);
@@ -1061,6 +1074,7 @@ static error_t parse_cmds (int key, char *arg, struct argp_state *state)
                 settings->audioDevice = settings->alsaAudioDevice;
             break;
         case 'a':
+            settings->configChanged = true;
             settings->midiEngine = alsa_midi;
             if (arg)
                 settings->midiDevice = string(arg);
@@ -1068,6 +1082,7 @@ static error_t parse_cmds (int key, char *arg, struct argp_state *state)
                 settings->midiDevice = string(settings->alsaMidiDevice);
             break;
         case 'b': // messy but I can't think of a better way :(
+            settings->configChanged = true;
             num = Config::string2int(string(arg));
             if (num >= 1024)
                 num = 1024;
@@ -1089,15 +1104,30 @@ static error_t parse_cmds (int key, char *arg, struct argp_state *state)
             if (arg)
                 settings->rootDefine = string(arg);
             break;
+        case 'c':
+            settings->configChanged = true;
+            settings->showCLI = false;
+            break;
+        case 'C':
+            settings->configChanged = true;
+            settings->showCLI = true;
+            break;
         case 'i':
+            settings->configChanged = true;
             settings->showGui = false;
             break;
+        case 'I':
+            settings->configChanged = true;
+            settings->showGui = true;
+            break;
         case 'J':
+            settings->configChanged = true;
             settings->audioEngine = jack_audio;
             if (arg)
                 settings->audioDevice = string(arg);
             break;
         case 'j':
+            settings->configChanged = true;
             settings->midiEngine = jack_midi;
             if (arg)
                 settings->midiDevice = string(arg);
@@ -1107,6 +1137,7 @@ static error_t parse_cmds (int key, char *arg, struct argp_state *state)
         case 'k': settings->startJack = true; break;
         case 'K': settings->connectJackaudio = true; break;
         case 'o':
+            settings->configChanged = true;
             num = Config::string2int(string(arg));
             if (num >= 16384)
                 num = 16384;
@@ -1126,6 +1157,7 @@ static error_t parse_cmds (int key, char *arg, struct argp_state *state)
             settings->Oscilsize = num;
             break;
         case 'R':
+            settings->configChanged = true;
             num = Config::string2int(string(arg));
             if (num >= 96000)
                 num = 96000;
@@ -1150,14 +1182,13 @@ static error_t parse_cmds (int key, char *arg, struct argp_state *state)
                         settings->jackSessionUuid = string(arg);
             break;
         #endif
-        case 'c': // no-cmdline is handled in main()
-            break;
         case ARGP_KEY_ARG:
         case ARGP_KEY_END:
             break;
         default:
             return ARGP_ERR_UNKNOWN;
     }
+
     return 0;
 }
 

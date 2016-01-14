@@ -23,7 +23,7 @@ cmake_policy (SET CMP0004 OLD)
 if (POLICY CMP0046)
     cmake_policy (SET CMP0046 OLD)
 endif (POLICY CMP0046)
-set (YOSHIMI_VERSION "1.3.7 M")
+set (YOSHIMI_VERSION "1.3.8")
 file (WRITE version.txt "${YOSHIMI_VERSION}")
 
 set (CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -288,8 +288,7 @@ set (Synth_sources
 
 set (MusicIO_sources
     MusicIO/MusicClient.cpp  MusicIO/MusicIO.cpp  MusicIO/JackEngine.cpp
-    MusicIO/AlsaEngine.cpp  MusicIO/JackClient.cpp  MusicIO/AlsaClient.cpp
-    MusicIO/JackAlsaClient.cpp  MusicIO/AlsaJackClient.cpp
+    MusicIO/AlsaEngine.cpp
 )
 
 add_definitions (
@@ -485,6 +484,8 @@ install (FILES ${CMAKE_CURRENT_SOURCE_DIR}/../desktop/yoshimi_alt.svg
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps)
 install (FILES ${CMAKE_CURRENT_SOURCE_DIR}/../desktop/yoshimi.appdata.xml
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/appdata)
+install (FILES ${CMAKE_CURRENT_SOURCE_DIR}/../desktop/yoshimi.1
+    DESTINATION share/man/man1)
 
 set_directory_properties (PROPERTIES
     ADDITIONAL_MAKE_CLEAN_FILES "${CMAKE_SOURCE_DIR}/*UI.c* ${CMAKE_SOURCE_DIR}/src/*UI.h"

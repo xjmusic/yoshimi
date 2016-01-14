@@ -179,6 +179,8 @@ static void *mainGuiThread(void *arg)
     }
     while (firstSynth == NULL);
 
+    GuiThreadMsg::sendMessage(firstSynth, GuiThreadMsg::NewSynthEngine, 0);
+
     while (firstSynth->getRuntime().runSynth)
     {        
         if (firstSynth->getUniqueId() == 0)
@@ -289,7 +291,10 @@ bool mainCreateNewInstance(unsigned int forceId)
     if (synth->getRuntime().showGui)
     {
         synth->setWindowTitle(musicClient->midiClientName());
-        GuiThreadMsg::sendMessage(synth, GuiThreadMsg::NewSynthEngine, 0);
+        if(firstSynth != NULL) //FLTK is not ready yet - send this messege leter for first synth
+        {
+            GuiThreadMsg::sendMessage(synth, GuiThreadMsg::NewSynthEngine, 0);
+        }
     }
 
     synth->getRuntime().StartupReport(musicClient);
@@ -365,19 +370,22 @@ int main(int argc, char *argv[])
     pthread_attr_t attr;
     sem_t semGui;
 
-    for (int i = 0; i < globalArgc; ++i)
+    if (!mainCreateNewInstance(0))
     {
-        if (!strcmp(globalArgv [i], "-i")
-           || !strcmp(globalArgv [i], "--no-gui")
-           || !strcmp(globalArgv [i], "--help")
-           || !strcmp(globalArgv [i], "-?"))
-        {
-            bShowGui = false;
-        }
-        else if(!strcmp(globalArgv [i], "-c"))
-        {
-            bShowCmdLine = false;
-        }
+        goto bail_out;
+    }
+
+    it = synthInstances.begin();
+    firstRuntime = &it->first->getRuntime();
+    firstSynth = it->first;
+    bShowGui = firstRuntime->showGui;
+    bShowCmdLine = firstRuntime->showCLI;
+    if (!(bShowGui | bShowCmdLine))
+    {
+        cout << "Can't disable both gui and command line!\nSet for command line.\n";
+        firstRuntime->showCLI = true;
+        bShowCmdLine = true;
+        firstRuntime->configChanged = true;
     }
 
     if(sem_init(&semGui, 0, 0) == 0)
@@ -400,13 +408,6 @@ int main(int argc, char *argv[])
     sem_wait(&semGui);
     sem_destroy(&semGui);
 
-    if (!mainCreateNewInstance(0))
-    {
-        goto bail_out;
-    }
-    it = synthInstances.begin();
-    firstRuntime = &it->first->getRuntime();
-    firstSynth = it->first;
 
     // NSM_TODO : Is this signal handling OK given the sigaction() below?
     signal( SIGINT , sigterm_exit);
@@ -436,6 +437,7 @@ int main(int argc, char *argv[])
                 nsm = 0;
         }
     }
+
 
     memset(&yoshimiSigAction, 0, sizeof(yoshimiSigAction));
     yoshimiSigAction.sa_handler = yoshimiSigHandler;
