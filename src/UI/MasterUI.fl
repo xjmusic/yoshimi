@@ -1202,7 +1202,8 @@ updatepanel();}
         updatepanel();
         }} {}
   }
-  Function {do_load_master_unconditional(bool updatehistory, const char* file)} {return_type int} {
+  Function {do_load_master_unconditional(bool updatehistory, const char* file)} {return_type int
+  } {
     code {//
         const char *fname;
         if (NULL != file)
@@ -1224,6 +1225,7 @@ updatepanel();}
             RecentParams->activate();
             if(result > 1)
             	fl_alert("At least one instrument is called 'Simple Sound', the name of Yoshimi's basic sound. You should change this if you wish to re-save.");
+            return 0;
         }
         else
         {
@@ -1235,10 +1237,10 @@ updatepanel();}
             }
             else
                 fl_alert("%s",msg.c_str());
+            return -1;
         }} {}
   }
-
- Function {do_load_master(bool updatehistory, const char* file)} {} {
+  Function {do_load_master(bool updatehistory, const char* file)} {} {
     code {//
         const char *fname;
         if (NULL != file)
@@ -1259,9 +1261,9 @@ updatepanel();}
                  fl_alert(msg.c_str());
              }
          }} {}
-   }
-
-   Function {do_save_master_unconditional(const char* file = NULL)} {return_type int} {
+  }
+  Function {do_save_master_unconditional(const char* file = NULL)} {return_type int
+  } {
     code {//
         bool result = false;
         result = synth->saveXML(file);
@@ -1272,10 +1274,8 @@ updatepanel();}
             RecentParams->activate();
         }
         updatepanel();
-        return result;
-        } {}
+        return result;} {}
   }
-
   Function {do_save_master(const char* file = NULL)} {} {
     code {//
         const char *fname;
