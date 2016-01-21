@@ -186,10 +186,6 @@ static void *mainGuiThread(void *arg)
         if (firstSynth->getUniqueId() == 0)
         {
             firstSynth->getRuntime().signalCheck();
-            /*if (read(0, &commandChr, 1) > 0)
-                if (commandProcess(commandChr))
-                    firstSynth->DecodeCommands( commandBuffer);//getRuntime().Log(commandBuffer);
-                    */
         }
 
         for (it = synthInstances.begin(); it != synthInstances.end(); ++it)
@@ -199,6 +195,7 @@ static void *mainGuiThread(void *arg)
             _synth->getRuntime().deadObjects->disposeBodies();
             if (!_synth->getRuntime().runSynth && _synth->getUniqueId() > 0)
             {
+                int tmpID =  _synth->getUniqueId();
                 if (_client)
                 {
                     _client->Close();
@@ -207,13 +204,14 @@ static void *mainGuiThread(void *arg)
 
                 if (_synth)
                 {
+                    _synth->saveBanks(tmpID);
                     _synth->getRuntime().deadObjects->disposeBodies();
                     _synth->getRuntime().flushLog();
                     delete _synth;
                 }
 
                 synthInstances.erase(it);
-                cout << "\nStopped " << _synth->getUniqueId() << "\n";
+                cout << "\nStopped " << tmpID << "\n";
                 break;
             }
             if (bShowGui)
@@ -244,7 +242,7 @@ static void *mainGuiThread(void *arg)
         else
             usleep(33333);
     }
-    
+    firstSynth->saveBanks(0);
     return NULL;
 }
 
@@ -328,6 +326,9 @@ bool mainCreateNewInstance(unsigned int forceId)
             mainRegisterAudioPort(synth, npart);
         }
     }
+    
+    synth->installBanks(synth->getUniqueId());
+    
     return true;
 
 bail_out:

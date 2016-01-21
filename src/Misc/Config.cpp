@@ -414,7 +414,7 @@ bool Config::loadConfig(void)
     string homedir = string(getenv("HOME"));
     if (homedir.empty() || !isDirectory(homedir))
         homedir = string("/tmp");
-    ConfigDir = homedir + string("/.config/") + programcommand;
+    ConfigDir = homedir + string("/.config/") + YOSHIMI;
     if (!isDirectory(ConfigDir))
     {
         cmd = string("mkdir -p ") + ConfigDir;
@@ -424,7 +424,9 @@ bool Config::loadConfig(void)
             return false;
         }
     }
-    string yoshimi = "/" + programcommand;
+    string yoshimi = "/"; // for some reason it doesn't
+    yoshimi += YOSHIMI; // like these as one line here
+    
     if (synth->getUniqueId() > 0)
         yoshimi += ("-" + asString(synth->getUniqueId()));
     string presetDir = ConfigDir + "/presets";
@@ -442,7 +444,8 @@ bool Config::loadConfig(void)
     if (!isRegFile(resConfigFile) && !isRegFile(ConfigFile))
     {
         Log("ConfigFile " + resConfigFile + " not found, will use default settings");
-        saveConfig();
+        configChanged = true; // give the user the choice
+        //saveConfig();
     }
     else
     {
@@ -565,7 +568,7 @@ bool Config::extractConfigData(XMLwrapper *xml)
     }
 
     // get bank dirs
-    synth->getBankRef().parseConfigFile(xml);
+    //synth->getBankRef().parseConfigFile(xml);
     
     xml->exitbranch(); // CONFIGURATION
     return true;
@@ -653,7 +656,7 @@ void Config::addConfigXML(XMLwrapper *xmltree)
         }
         xmltree->endbranch();
     }
-    synth->getBankRef().saveToConfigFile(xmltree);
+    //synth->getBankRef().saveToConfigFile(xmltree);
 
     xmltree->endbranch(); // CONFIGURATION
 }
