@@ -66,18 +66,32 @@ file (GLOB yoshimi_manifest_ttl
 file (GLOB yoshimi_plugin_ttl
     yoshimi.ttl)
 
-set (GuiFluids
-    ../UI/WidgetPDialUI.fl  ../UI/PresetsUI.fl  ../UI/EnvelopeUI.fl
-    ../UI/LFOUI.fl  ../UI/FilterUI.fl  ../UI/VirKeyboardUI.fl
-    ../UI/ConfigUI.fl  ../UI/SUBnoteUI.fl  ../UI/ResonanceUI.fl
-    ../UI/OscilGenUI.fl  ../UI/ADnoteUI.fl  ../UI/PADnoteUI.fl
-    ../UI/EffUI.fl  ../UI/BankUI.fl  ../UI/PartUI.fl
-    ../UI/MicrotonalUI.fl  ../UI/MasterUI.fl    ../UI/MasterMiscUI.fl
-    ../UI/ParametersUI.fl ../UI/ConsoleUI.fl
+set (FltkUI_names
+    "WidgetPDialUI"  "PresetsUI"  "EnvelopeUI"
+    "LFOUI"  "FilterUI"  "VirKeyboardUI"
+    "ConfigUI"  "SUBnoteUI"  "ResonanceUI"
+    "OscilGenUI"  "ADnoteUI"  "PADnoteUI"
+    "EffUI"  "BankUI"  "PartUI"
+    "MicrotonalUI"  "MasterUI" "MasterMiscUI"
+    "ParametersUI" "ConsoleUI"
 )
 
-fltk_wrap_ui (yoshimi_lv2 ${GuiFluids})
-set_source_files_properties (../UI/MasterUI.h PROPERTIES GENERATED 1)
+# workaround fltk_wrap_ui breakage
+set (FltkUI_sources)
+set (FltkUI_headers)
+foreach(basename ${FltkUI_names})
+    set (fluidfile "${CMAKE_CURRENT_SOURCE_DIR}/../UI/${basename}.fl")
+    set (sourcefile "${basename}.cpp")
+    set (headerfile "${basename}.h")
+    add_custom_command(
+        OUTPUT ${sourcefile}
+        COMMAND ${FLTK_FLUID_EXECUTABLE} ARGS -c -o .cpp ${fluidfile}
+        DEPENDS ${fluidfile}
+    )
+    set (FltkUI_sources ${FltkUI_sources} "${sourcefile}")
+    set (FltkUI_headers ${FltkUI_headers} "${headerfile}")
+endforeach(basename ${FltkUI_names})
+
 
 add_definitions (-DYOSHIMI_LV2_PLUGIN=1)
 
@@ -91,7 +105,7 @@ add_library (yoshimi_lv2 MODULE
             ${yoshimi_params_files}
             ${yoshimi_synth_files}
             ${yoshimi_musicio_files}
-            ${yoshimi_lv2_FLTK_UI_SRCS})
+            ${FltkUI_sources})
 
 add_custom_target(yoshimi_lv2_ttl
                    COMMAND test -f ${yoshimi_manifest_ttl}
@@ -125,3 +139,5 @@ install (TARGETS yoshimi_lv2 DESTINATION ${CMAKE_INSTALL_PREFIX}/${LV2_INSTALL_D
 install (FILES ${yoshimi_manifest_ttl} ${yoshimi_plugin_ttl}
   DESTINATION ${CMAKE_INSTALL_PREFIX}/${LV2_INSTALL_DIR}/yoshimi.lv2
 )
+
+set_directory_properties(PROPERTY ADDITIONAL_MAKE_CLEAN_FILES "${FltkUI_headers}")

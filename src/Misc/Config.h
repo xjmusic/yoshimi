@@ -65,9 +65,9 @@ class Config : public MiscFuncs
         void saveState() { saveSessionData(StateFile); }
         void saveState(const string statefile)  { saveSessionData(statefile); }
         bool loadState(const string statefile)
-            { return restoreSessionData(statefile); }
+            { return restoreSessionData(statefile, false); }
         bool stateRestore(void)
-            { return restoreSessionData(StateFile); }
+            { return restoreSessionData(StateFile, false); }
         bool restoreJsession(void);
         void setJackSessionSave(int event_type, string session_file);
 
@@ -128,7 +128,8 @@ class Config : public MiscFuncs
         bool          SimpleCheck;
         int           xmlType;
         int           EnableProgChange;
-        bool          consoleMenuItem;
+        bool          toConsole;
+        bool          hideErrors;
         bool          logXMLheaders;
         bool          configChanged;
         int           rtprio;
@@ -181,7 +182,7 @@ class Config : public MiscFuncs
         void addConfigXML(XMLwrapper *xml);
         void addRuntimeXML(XMLwrapper *xml);
         void saveSessionData(string savefile);
-        bool restoreSessionData(string sessionfile);
+        bool restoreSessionData(string sessionfile, bool startup);
         int SSEcapability(void);
         void AntiDenormals(bool set_daz_ftz);
         void saveJackSession(void);

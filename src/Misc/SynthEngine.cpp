@@ -257,16 +257,16 @@ bool SynthEngine::Init(unsigned int audiosrate, int audiobufsize)
     {
         if (!Runtime.restoreJsession())
         {
-            Runtime.Log("Restore jack session failed");
-            goto bail_out;
+            Runtime.Log("Restore jack session failed. Using defaults");
+            defaults();
         }
     }
     else if (Runtime.restoreState)
     {
         if (!Runtime.stateRestore())
          {
-             Runtime.Log("Restore state failed");
-             goto bail_out;
+             Runtime.Log("Restore state failed. Using defaults");
+             defaults();
          }
     }
     else
@@ -816,11 +816,11 @@ void SynthEngine::SetPartPortamento(int npart, bool state)
 void SynthEngine::cliOutput(list<string>& msg_buf, unsigned int lines)
 {
     list<string>::iterator it;
-    if ((msg_buf.size() < lines) || Runtime.consoleMenuItem) // Output will fit the screen (or console)
+    if ((msg_buf.size() < lines) || Runtime.toConsole) // Output will fit the screen (or console)
     {
         for (it = msg_buf.begin(); it != msg_buf.end(); ++it)
             Runtime.Log(*it);
-        if (Runtime.consoleMenuItem)
+        if (Runtime.toConsole)
             // we need this in case someone is working headless
             cout << "\nReports sent to console window\n\n";
     }
@@ -1068,7 +1068,7 @@ void SynthEngine::ListSettings(list<string>& msg_buf)
     msg_buf.push_back("  jack MIDI " + Runtime.jackMidiDevice);
     msg_buf.push_back("  Jack server " + Runtime.jackServer);
 
-    if (Runtime.consoleMenuItem)
+    if (Runtime.toConsole)
     {
         msg_buf.push_back("  Reports sent to console window");
     }
@@ -1106,14 +1106,14 @@ void SynthEngine::SetSystemValue(int type, int value)
         case 100: // reports destination
             if (value > 63)
             {
-                Runtime.consoleMenuItem = true;
+                Runtime.toConsole = true;
                 Runtime.Log("Sending reports to console window");
                 // we need the next line in case someone is working headless
                 cout << "Sending reports to console window\n";
             }
             else
             {
-                Runtime.consoleMenuItem = false;
+                Runtime.toConsole = false;
                 Runtime.Log("Sending reports to stderr");
             }
             GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateMaster, 0);
@@ -1906,19 +1906,19 @@ bool SynthEngine::installBanks(int instance)
     else
         branch = "CONFIGURATION";
     XMLwrapper *xml = new XMLwrapper(this);
-        if (!xml)
-            Runtime.Log("loadConfig failed XMLwrapper allocation");
-        else
-        {
-            xml->loadXMLfile(bankname);
-            if (!xml->enterbranch(branch))
-            {
-                Runtime. Log("extractConfigData, no " + branch + " branch");
-                return false;
-            }
-            bank.parseConfigFile(xml);
-            xml->exitbranch();
-        }
+    if (!xml)
+    {
+        Runtime.Log("loadConfig failed XMLwrapper allocation");
+        return false;
+    }
+    xml->loadXMLfile(bankname);
+    if (!xml->enterbranch(branch))
+    {
+        Runtime. Log("extractConfigData, no " + branch + " branch");
+        return false;
+    }
+    bank.parseConfigFile(xml);
+    xml->exitbranch();
     delete xml;
     return true;
 }
@@ -1948,6 +1948,91 @@ bool SynthEngine::saveBanks(int instance)
     Runtime.GzipCompression = tmp;
     delete xmltree;
     
+    return true;
+}
+
+
+bool SynthEngine::loadHistory(int instance)
+{
+    string name = Runtime.ConfigDir + '/' + YOSHIMI;
+    if (instance > 0)
+        name += ("-" + asString(instance));
+    string historyname = name + ".history";
+    if (!isRegFile(historyname))
+    {
+        Runtime.Log("Missing history file");
+        return false;
+    }
+    XMLwrapper *xml = new XMLwrapper(this);
+    if (!xml)
+    {
+        Runtime.Log("loadHistory failed XMLwrapper allocation");
+        return false;
+    }
+    xml->loadXMLfile(historyname);
+    if (!xml->enterbranch("HISTORY"))
+    {
+        Runtime. Log("extractHistoryData, no HISTORY branch");
+        return false;
+    }
+    if (xml->enterbranch("XMZ_PATCH_SETS"))
+    {
+        int hist_size = xml->getpar("history_size", 0, 0, Runtime.MaxParamsHistory);
+        string xmz;
+        for (int i = 0; i < hist_size; ++i)
+        {
+            if (xml->enterbranch("XMZ_FILE", i))
+            {
+                xmz = xml->getparstr("xmz_file");
+                if (xmz.size() && isRegFile(xmz))
+                    Runtime.addParamHistory(xmz);
+                xml->exitbranch();
+            }
+        }
+        xml->exitbranch();
+    }
+    xml->exitbranch();
+    return true;
+}
+
+
+bool SynthEngine::saveHistory(int instance)
+{
+    string name = Runtime.ConfigDir + '/' + YOSHIMI;
+    if (instance > 0)
+        name += ("-" + asString(instance));
+    string historyname = name + ".history";
+    Runtime.xmlType = XML_HISTORY;
+    unsigned int tmp = Runtime.GzipCompression;
+    Runtime.GzipCompression = 0;
+    XMLwrapper *xmltree = new XMLwrapper(this);
+    if (!xmltree)
+    {
+        Runtime.Log("saveConfig failed xmltree allocation");
+        return false;
+    }
+    xmltree->beginbranch("HISTORY");
+    {
+        if (Runtime.ParamsHistory.size())
+        {
+            xmltree->beginbranch("XMZ_PATCH_SETS");
+            xmltree->addpar("history_size", Runtime.ParamsHistory.size());
+            deque<HistoryListItem>::reverse_iterator rx = Runtime.ParamsHistory.rbegin();
+            unsigned int count = 0;
+            for (int x = 0; rx != Runtime.ParamsHistory.rend() && count <= Runtime.MaxParamsHistory; ++rx, ++x)
+            {
+                xmltree->beginbranch("XMZ_FILE", x);
+                xmltree->addparstr("xmz_file", rx->file);
+                xmltree->endbranch();
+            }
+            xmltree->endbranch();
+        }
+    }
+    xmltree->endbranch();
+    if (!xmltree->saveXMLfile(historyname))
+        Runtime.Log("Failed to save data to " + historyname);
+    Runtime.GzipCompression = tmp;
+    delete xmltree;
     return true;
 }
 

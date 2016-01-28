@@ -1,3 +1,22 @@
+/*
+    CmdInterface.cpp
+
+    Copyright 2015-2016, Will Godfrey and others.
+
+    This file is part of yoshimi, which is free software: you can
+    redistribute it and/or modify it under the terms of the GNU General
+    Public License as published by the Free Software Foundation, either
+    version 2 of the License, or (at your option) any later version.
+
+    yoshimi is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with yoshimi.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -49,7 +68,8 @@ string basics[] = {
     "path add <s>",                 "add bank root path",
     "path remove <n>",              "remove bank root path ID",
     "set",                          "set all main parameters",
-    "  reports [n]",                "report destination (1 GUI console, other stderr)",
+    "  reports [s]",                "destination (gui/stderr)",
+    "  ",                           "  non-fatal (show/hide)",
     "  root <n>",                   "current root path to ID",
     "  bank <n>",                   "current bank to ID",
     "end"
@@ -238,9 +258,9 @@ bool CmdInterface::helpList()
         msg.push_back("'*' entries need to be saved and Yoshimi restarted to activate");
     }
     
-    if (synth->getRuntime().consoleMenuItem)
+    if (synth->getRuntime().toConsole)
         // we need this in case someone is working headless
-        cout << "\nset reports [n] - set report destination (1 GUI console, other stderr)\n\n";
+        cout << "\nset reports [s] - set report destination (gui/stderr)\n\n";
  
     synth->cliOutput(msg, LINES);
     return true;
@@ -435,7 +455,7 @@ int CmdInterface::effects(int level)
     {
         /*
          * Using constant strings and bedding the number into the list
-         * of presets provies a very simple way to keep track of a
+         * of presets provides a very simple way to keep track of a
          * moving target with minimal code and data space.
          * However, all of this should really be in src/Effects
          * not here *and* in the gui code!
@@ -908,10 +928,26 @@ int CmdInterface::commandSet()
         
     else if (matchnMove(1, point, "reports"))
     {
-        if (point[0] == '1')
+        if (matchnMove(1, point, "gui"))
             synth->SetSystemValue(100, 127);
-        else
+        else if (matchnMove(1, point, "stderr"))
             synth->SetSystemValue(100, 0);
+        else if (matchnMove(1, point, "show"))
+        {
+            Runtime.hideErrors = false;
+            Runtime.Log("Showing all errors");
+        }
+        else if (matchnMove(1, point, "hide"))
+        {
+            Runtime.hideErrors = true;
+            Runtime.Log("Hiding non-fatal errors");
+        }
+        else
+        {
+            synth->SetSystemValue(100, 0);
+            Runtime.hideErrors = false;
+            Runtime.Log("Showing all errors");
+        }
         reply = done_msg;
         Runtime.configChanged = true;
     }
@@ -1277,7 +1313,7 @@ bool CmdInterface::cmdIfaceProcessCommand()
         }
     }
     
-    else if (matchnMove(2, point, "path"))
+    else if (matchnMove(2, point, "paths"))
     {
         if (matchnMove(1, point, "add"))
         {
@@ -1290,7 +1326,7 @@ bool CmdInterface::cmdIfaceProcessCommand()
             {
                 GuiThreadMsg::sendMessage(synth, GuiThreadMsg::UpdatePaths, 0);
                 Runtime.Log("Added new root ID " + asString(found) + " as " + (string) point);
-                Runtime.configChanged = true;
+                synth->saveBanks(currentInstance);
             }
             reply = done_msg;
         }
@@ -1307,7 +1343,7 @@ bool CmdInterface::cmdIfaceProcessCommand()
                     synth->getBankRef().removeRoot(rootID);
                     GuiThreadMsg::sendMessage(synth, GuiThreadMsg::UpdatePaths, 0);
                     Runtime.Log("Removed " + rootname);
-                    Runtime.configChanged = true;
+                    synth->saveBanks(currentInstance);
                 }
                 reply = done_msg;
             }
