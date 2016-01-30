@@ -253,7 +253,7 @@ bool SynthEngine::Init(unsigned int audiosrate, int audiobufsize)
     }
     defaults();
     ClearNRPNs();
-    if (Runtime.restoreJackSession)
+    if (Runtime.restoreJackSession) // the following are not fatal if failed
     {
         if (!Runtime.restoreJsession())
         {
@@ -271,12 +271,12 @@ bool SynthEngine::Init(unsigned int audiosrate, int audiobufsize)
     }
     else
     {
-        if (Runtime.paramsLoad.size()) // these are not fatal if failed
+        if (Runtime.paramsLoad.size())
         {
             if (loadXML(Runtime.paramsLoad))
             {
                 applyparameters();
-                Runtime.paramsLoad = Runtime.addParamHistory(Runtime.paramsLoad);
+                Runtime.paramsLoad = Runtime.addParamHistory(Runtime.paramsLoad, ".xmz", Runtime.ParamsHistory);
                 Runtime.Log("Loaded " + Runtime.paramsLoad + " parameters");
             }
             else
@@ -447,7 +447,7 @@ void SynthEngine::defaults(void)
     microtonal.defaults();
     Runtime.currentPart = 0;
     //CmdInterface.defaults(); // **** need to work out how to call this
-    Runtime.NumAvailableParts = 16;
+    Runtime.NumAvailableParts = NUM_MIDI_CHANNELS;
     ShutUp();
 }
 
@@ -1931,8 +1931,8 @@ bool SynthEngine::saveBanks(int instance)
         name += ("-" + asString(instance));
     string bankname = name + ".banks";
     Runtime.xmlType = XML_BANK;
-    unsigned int tmp = Runtime.GzipCompression;
-    Runtime.GzipCompression = 0;
+ //   unsigned int tmp = Runtime.GzipCompression;
+ //   Runtime.GzipCompression = 0;
     XMLwrapper *xmltree = new XMLwrapper(this);
     if (!xmltree)
     {
@@ -1945,7 +1945,7 @@ bool SynthEngine::saveBanks(int instance)
 
     if (!xmltree->saveXMLfile(bankname))
         Runtime.Log("Failed to save config to " + bankname);
-    Runtime.GzipCompression = tmp;
+ //   Runtime.GzipCompression = tmp;
     delete xmltree;
     
     return true;
@@ -1975,22 +1975,58 @@ bool SynthEngine::loadHistory(int instance)
         Runtime. Log("extractHistoryData, no HISTORY branch");
         return false;
     }
+    int hist_size;
+    string filetype;
     if (xml->enterbranch("XMZ_PATCH_SETS"))
     {
-        int hist_size = xml->getpar("history_size", 0, 0, Runtime.MaxParamsHistory);
-        string xmz;
+        hist_size = xml->getpar("history_size", 0, 0, MAX_HISTORY);
         for (int i = 0; i < hist_size; ++i)
         {
             if (xml->enterbranch("XMZ_FILE", i))
             {
-                xmz = xml->getparstr("xmz_file");
-                if (xmz.size() && isRegFile(xmz))
-                    Runtime.addParamHistory(xmz);
+                filetype = xml->getparstr("xmz_file");
+                if (filetype.size() && isRegFile(filetype))
+                    Runtime.addParamHistory(filetype, ".xmz", Runtime.ParamsHistory);
                 xml->exitbranch();
             }
         }
         xml->exitbranch();
     }
+    
+    if (xml->enterbranch("XMZ_SCALE"))
+    {
+        hist_size = xml->getpar("history_size", 0, 0, MAX_HISTORY);
+
+        for (int i = 0; i < hist_size; ++i)
+        {
+            if (xml->enterbranch("XMZ_FILE", i))
+            {
+                filetype = xml->getparstr("xsz_file");
+                if (filetype.size() && isRegFile(filetype))
+                    Runtime.addParamHistory(filetype, ".xsz", Runtime.ScaleHistory);
+                xml->exitbranch();
+            }
+        }
+        xml->exitbranch();
+    }
+
+    if (xml->enterbranch("XMZ_STATE"))
+    {
+        hist_size = xml->getpar("history_size", 0, 0, MAX_HISTORY);
+
+        for (int i = 0; i < hist_size; ++i)
+        {
+            if (xml->enterbranch("XMZ_FILE", i))
+            {
+                filetype = xml->getparstr("state_file");
+                if (filetype.size() && isRegFile(filetype))
+                    Runtime.addParamHistory(filetype, ".state", Runtime.StateHistory);
+                xml->exitbranch();
+            }
+        }
+        xml->exitbranch();
+    }
+    
     xml->exitbranch();
     return true;
 }
@@ -2008,7 +2044,7 @@ bool SynthEngine::saveHistory(int instance)
     XMLwrapper *xmltree = new XMLwrapper(this);
     if (!xmltree)
     {
-        Runtime.Log("saveConfig failed xmltree allocation");
+        Runtime.Log("saveHistory failed xmltree allocation");
         return false;
     }
     xmltree->beginbranch("HISTORY");
@@ -2019,10 +2055,38 @@ bool SynthEngine::saveHistory(int instance)
             xmltree->addpar("history_size", Runtime.ParamsHistory.size());
             deque<HistoryListItem>::reverse_iterator rx = Runtime.ParamsHistory.rbegin();
             unsigned int count = 0;
-            for (int x = 0; rx != Runtime.ParamsHistory.rend() && count <= Runtime.MaxParamsHistory; ++rx, ++x)
+            for (int x = 0; rx != Runtime.ParamsHistory.rend() && count <= MAX_HISTORY; ++rx, ++x)
             {
                 xmltree->beginbranch("XMZ_FILE", x);
                 xmltree->addparstr("xmz_file", rx->file);
+                xmltree->endbranch();
+            }
+            xmltree->endbranch();
+        }
+        if (Runtime.ScaleHistory.size())
+        {
+            xmltree->beginbranch("XMZ_SCALE");
+            xmltree->addpar("history_size", Runtime.ScaleHistory.size());
+            deque<HistoryListItem>::reverse_iterator rx = Runtime.ScaleHistory.rbegin();
+            unsigned int count = 0;
+            for (int x = 0; rx != Runtime.ScaleHistory.rend() && count <= MAX_HISTORY; ++rx, ++x)
+            {
+                xmltree->beginbranch("XMZ_FILE", x);
+                xmltree->addparstr("xsz_file", rx->file);
+                xmltree->endbranch();
+            }
+            xmltree->endbranch();
+        }
+        if (Runtime.StateHistory.size())
+        {
+            xmltree->beginbranch("XMZ_STATE");
+            xmltree->addpar("history_size", Runtime.StateHistory.size());
+            deque<HistoryListItem>::reverse_iterator rx = Runtime.StateHistory.rbegin();
+            unsigned int count = 0;
+            for (int x = 0; rx != Runtime.StateHistory.rend() && count <= MAX_HISTORY; ++rx, ++x)
+            {
+                xmltree->beginbranch("XMZ_FILE", x);
+                xmltree->addparstr("state_file", rx->file);
                 xmltree->endbranch();
             }
             xmltree->endbranch();
@@ -2041,6 +2105,7 @@ void SynthEngine::add2XML(XMLwrapper *xml)
 {
     xml->beginbranch("MASTER");
     actionLock(lockmute);
+    xml->addpar("current_midi_parts", Runtime.NumAvailableParts);
     xml->addpar("volume", Pvolume);
     xml->addpar("key_shift", Pkeyshift);
 
@@ -2170,13 +2235,14 @@ bool SynthEngine::getfromXML(XMLwrapper *xml)
         Runtime.NumAvailableParts = NUM_MIDI_CHANNELS; // set default to be safe
         return false;
     }
-    Runtime.NumAvailableParts = xml->getpar("max_midi_parts", NUM_MIDI_CHANNELS, NUM_MIDI_CHANNELS, NUM_MIDI_CHANNELS * 4);
+    Runtime.NumAvailableParts = xml->getpar("max_midi_parts", NUM_MIDI_CHANNELS, NUM_MIDI_CHANNELS, NUM_MIDI_PARTS); // for backwards compatibility
     xml->exitbranch();
     if (!xml->enterbranch("MASTER"))
     {
         Runtime.Log("SynthEngine getfromXML, no MASTER branch");
         return false;
     }
+    Runtime.NumAvailableParts = xml->getpar("current_midi_parts", NUM_MIDI_CHANNELS, NUM_MIDI_CHANNELS, NUM_MIDI_PARTS);
     setPvolume(xml->getpar127("volume", Pvolume));
     setPkeyshift(xml->getpar127("key_shift", Pkeyshift));
 

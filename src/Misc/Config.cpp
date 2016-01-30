@@ -55,7 +55,6 @@ using namespace std;
 #include "MasterUI.h"
 
 extern void mainRegisterAudioPort(SynthEngine *s, int portnum);
-const unsigned short Config::MaxParamsHistory = 25;
 
 static char prog_doc[] =
     "Yoshimi " YOSHIMI_VERSION ", a derivative of ZynAddSubFX - "
@@ -94,7 +93,7 @@ static struct argp_option cmd_options[] = {
 
 
 Config::Config(SynthEngine *_synth, int argc, char **argv) :
-    //restoreState(false),
+    restoreState(false),
     restoreJackSession(false),
     Samplerate(48000),
     Buffersize(256),
@@ -224,7 +223,7 @@ bool Config::Setup(int argc, char **argv)
          * data that must be set early, and runtime data that must be set
          * after synth has been initialised.
          * 
-         * Currently we open it here and fetch just the statarup data, then
+         * Currently we open it here and fetch just the startup data, then
          * reopen it in synth and fetch all the data (including the startup
          * again).
          * 
@@ -255,12 +254,12 @@ void Config::flushLog(void)
 }
 
 
-string Config::addParamHistory(string file)
+string Config::addParamHistory(string file, string extension, deque<HistoryListItem> &ParamsHistory)
 {
     if (!file.empty())
     {
         unsigned int name_start = file.rfind("/");
-        unsigned int name_end = file.rfind(".xmz");
+        unsigned int name_end = file.rfind(extension);
         if (name_start != string::npos && name_end != string::npos
             && (name_start - 1) < name_end)
         {
@@ -273,7 +272,7 @@ string Config::addParamHistory(string file)
                 if (ParamsHistory.at(i).sameFile(file))
                     ParamsHistory.erase(itx);
             ParamsHistory.insert(ParamsHistory.begin(), item);
-            if (ParamsHistory.size() > MaxParamsHistory)
+            if (ParamsHistory.size() > MAX_HISTORY)
             {
                 itx = ParamsHistory.end();
                 ParamsHistory.erase(--itx);
@@ -286,17 +285,6 @@ string Config::addParamHistory(string file)
     return string();
 }
 
-
-string Config::historyFilename(int index)
-{
-    if (index > 0 && index <= (int)ParamsHistory.size())
-    {
-        itx = ParamsHistory.begin();
-        for (int i = index; i > 0; ++itx, --i) ;
-        return itx->file;
-    }
-    return string();
-}
 
 bool Config::showQuestionOrCmdWarning(string guiQuestion, string cmdLineWarning, bool bForceCmdLinePositive)
 {
@@ -637,7 +625,6 @@ void Config::addConfigXML(XMLwrapper *xmltree)
     xmltree->addpar("midi_upper_voice_C", midi_upper_voice_C);
     xmltree->addpar("ignore_program_change", (1 - EnableProgChange));
     xmltree->addpar("enable_part_on_voice_load", enable_part_on_voice_load);
-    
     xmltree->addpar("check_pad_synth", checksynthengines);
     xmltree->endbranch(); // CONFIGURATION
 }
