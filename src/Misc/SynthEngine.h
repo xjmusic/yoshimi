@@ -161,6 +161,7 @@ class SynthEngine : private SynthHelper, MiscFuncs
         // effects
         EffectMgr *sysefx[NUM_SYS_EFX]; // system
         EffectMgr *insefx[NUM_INS_EFX]; // insertion
+        EffectMgr *effdata;
 
         // part that's apply the insertion effect; -1 to disable
         short int Pinsparts[NUM_INS_EFX];

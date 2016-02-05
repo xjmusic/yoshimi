@@ -4,6 +4,7 @@
     Original ZynAddSubFX author Nasca Octavian Paul
     Copyright (C) 2002-2009 Nasca Octavian Paul
     Copyright 2009-2011, Alan Calvert
+    Copyright 20013-2016, Will Godfrey
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -32,7 +33,7 @@ EffectMgr::EffectMgr(const bool insertion_, SynthEngine *_synth) :
     insertion(insertion_),
     filterpars(NULL),
     nefx(0),
-    efx(NULL),
+    efx(NULL),    
     dryonly(false)
 {
     setpresettype("Peffect");
@@ -57,6 +58,25 @@ void EffectMgr::defaults(void)
 {
     changeeffect(0);
     setdryonly(false);
+}
+
+
+string EffectMgr::names(unsigned char effnum, unsigned char presnum, unsigned char group)
+{
+    Reverb *reverb;
+    if (effnum > 8)
+        return "Invalid";
+    string out = "";
+    switch (effnum)
+    {
+        case 1:
+            return reverb->listNames(presnum, group);
+            break;
+        default:
+            out = "Eff test ";
+            out += (char)(effnum + 48);
+            return out;
+    }
 }
 
 

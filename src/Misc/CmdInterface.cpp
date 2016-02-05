@@ -925,7 +925,7 @@ int CmdInterface::commandSet()
         }
         return done_msg;
     }
-        
+    
     else if (matchnMove(1, point, "reports"))
     {
         if (matchnMove(1, point, "gui"))
@@ -1204,6 +1204,25 @@ bool CmdInterface::cmdIfaceProcessCommand()
     point = skipSpace(point); // just to be sure
     list<string> msg;
 
+    if (matchnMove(4, point, "test"))
+    {
+        int t1, t2, t3 = 0;tmp = 0;
+        if (point[0] != 0)
+        {
+            t1 = string2int(point);
+            point = skipChars(point);        
+            if (point[0] != 0)
+            {
+                t2 = string2int(point);
+                point = skipChars(point);
+                if (point[0] != 0)
+                    t3 = string2int(point);
+            }
+        }
+        Runtime.Log(synth->effdata->names(t1, t2, t3));
+        return false;
+    }
+        
     if (matchnMove(2, point, "exit"))
     {
         if (Runtime.configChanged)

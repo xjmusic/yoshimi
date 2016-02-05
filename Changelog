@@ -1,5 +1,12 @@
 yoshimi 1.3.x
 
+2016-2-5 Will (effects)
+- Started separation of data from GUI. Only Reverb names yet.
+  'test' from CLI
+  n1 = effect type (1 for reverb),
+  n2 = preset/control name,
+  n3 = preset, NULL, control, short control
+  
 2016-2-1 Will
 - Fixed regression. Config was being resaved when nothing had changed.
 - Refined message hiding. Applies to Reports console and CLI. Hiding

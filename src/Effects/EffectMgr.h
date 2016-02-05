@@ -4,6 +4,7 @@
     Original ZynAddSubFX author Nasca Octavian Paul
     Copyright (C) 2002-2005 Nasca Octavian Paul
     Copyright 2009, Alan Calvert
+    Copyright 20013-2016, Will Godfrey
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -48,6 +49,9 @@ class EffectMgr : public Presets
 
         void add2XML(XMLwrapper *xml);
         void defaults(void);
+        
+        string names(unsigned char effnum, unsigned char presnum, unsigned char group);
+        
         void getfromXML(XMLwrapper *xml);
 
         void out(float *smpsl, float *smpsr);

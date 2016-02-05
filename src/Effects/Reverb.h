@@ -4,6 +4,7 @@
     Original ZynAddSubFX author Nasca Octavian Paul
     Copyright (C) 2002-2009 Nasca Octavian Paul
     Copyright 2009-2011, Alan Calvert
+    Copyright 20013-2016, Will Godfrey
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -37,9 +38,12 @@ class SynthEngine;
 
 class Reverb : public Effect
 {
-    public:
+    public: 
+        string listNames(unsigned char num, unsigned char group); 
+        
         Reverb(bool insertion_, float *efxoutl_, float *efxoutr_, SynthEngine *_synth);
         ~Reverb();
+
         void out(float *smps_l, float *smps_r);
         void cleanup(void);
 

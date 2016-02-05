@@ -4,6 +4,7 @@
     Original ZynAddSubFX author Nasca Octavian Paul
     Copyright (C) 2002-2009 Nasca Octavian Paul
     Copyright 2009-2011, Alan Calvert
+    Copyright 20013-2016, Will Godfrey
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -34,8 +35,51 @@ using namespace std;
 
 // todo: EarlyReflections, Prdelay, Perbalance
 
+string namesS [] = {
+    "cathedral 1", "cathedral 2", "cathedral 3", "hall 1", "hall 2", "room 1", "room 2", "basement", "tunnel", "echoed 1", "echoed 2", "very long 1", "very long 2", "Reverb"
+};
+unsigned char namesC = 13;
+
+string controlS [] = {
+    "DryWet", "Panning", "Time", "iDelay", "iDelayFeedback", "rDelay", "rBalance", "LowPassFilter", "HighPassFilter", "Damping", "Type", "RoomSize", "Bandwidth"
+};
+
+string controlShortS [] = {
+    "D/W", "Pan", "Time", "i.del", "i.delfb", "r.bal", "E/R", "LPF", "HPF", "Damp", "Type", "R.S", "BW"
+};
+unsigned char controlC = 13;
+
+
+string Reverb::listNames(unsigned char num, unsigned char group)
+{
+    switch(group)
+    {
+        case 0:
+            if (num > namesC)
+                num = namesC;
+            return namesS [num];
+            break;
+        case 2:
+            if (num > controlC)
+                return "Invalid";
+            return controlS [num];
+            break;
+        case 3:
+            if (num > controlC)
+                return "Invalid";
+            return controlShortS [num];
+            break;
+        case 1:
+        default:
+            return "Invalid";
+            break;
+    }
+}
+
+
 Reverb::Reverb(bool insertion_, float *efxoutl_, float *efxoutr_, SynthEngine *_synth) :
     Effect(insertion_, efxoutl_, efxoutr_, NULL, 0),
+
     // defaults
     Pvolume(48),
     Ptime(64),
