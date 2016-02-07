@@ -49,6 +49,8 @@ string controlShortS [] = {
 };
 unsigned char controlC = 13;
 
+int controlUpper [] = {127,127,127,127,127,127,127,127,127,127,127,127,127};
+int controlLower [] = {0,0,0,0,0,0,0,0,0,0,0,0,0};
 
 string Reverb::listNames(unsigned char num, unsigned char group)
 {
@@ -74,6 +76,23 @@ string Reverb::listNames(unsigned char num, unsigned char group)
             return "Invalid";
             break;
     }
+}
+
+
+int Reverb::listLimits(unsigned char num, bool group)
+{
+    if (!group)
+    {
+        if (num >= namesC)
+            return namesC;
+        return controlLower [num];
+    }
+    else
+    {
+        if (num >= controlC)
+            return controlC;
+        return controlUpper [num];
+    }  
 }
 
 

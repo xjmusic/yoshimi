@@ -40,6 +40,7 @@ class Reverb : public Effect
 {
     public: 
         string listNames(unsigned char num, unsigned char group); 
+        int listLimits(unsigned char num, bool group);
         
         Reverb(bool insertion_, float *efxoutl_, float *efxoutr_, SynthEngine *_synth);
         ~Reverb();

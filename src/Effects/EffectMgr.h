@@ -51,6 +51,7 @@ class EffectMgr : public Presets
         void defaults(void);
         
         string names(unsigned char effnum, unsigned char presnum, unsigned char group);
+        int limits(unsigned char effnum, unsigned char cmdnum, bool group);
         
         void getfromXML(XMLwrapper *xml);
 
@@ -82,6 +83,7 @@ class EffectMgr : public Presets
         FilterParams *filterpars;
 
     private:
+        const static int numEffects = 8;
         int nefx;
         Effect *efx;
         bool dryonly;

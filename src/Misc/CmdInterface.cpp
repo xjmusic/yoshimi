@@ -1206,7 +1206,8 @@ bool CmdInterface::cmdIfaceProcessCommand()
 
     if (matchnMove(4, point, "test"))
     {
-        int t1, t2, t3 = 0;tmp = 0;
+        int t1, t2, t3, t4;
+        t1 = t2 = t3 = t4 = 0;
         if (point[0] != 0)
         {
             t1 = string2int(point);
@@ -1216,10 +1217,20 @@ bool CmdInterface::cmdIfaceProcessCommand()
                 t2 = string2int(point);
                 point = skipChars(point);
                 if (point[0] != 0)
+                {
                     t3 = string2int(point);
+                    point = skipChars(point);
+                    if (point[0] != 0)
+                        t4 = string2int(point);
+                }
             }
         }
-        Runtime.Log(synth->effdata->names(t1, t2, t3));
+        if  (t4 == 0)
+            Runtime.Log(synth->effdata->names(t1, t2, t3));
+        else if (t4 == 1)
+            Runtime.Log("Limits " + asString(synth->effdata->limits(t1, t2, t3)));
+        else 
+            Runtime.Log("Out of range");
         return false;
     }
         

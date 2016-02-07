@@ -1,5 +1,12 @@
 yoshimi 1.3.x
 
+2016-2-7 Will (effects)
+- implemented effect control limit reporting, still only reverb.
+  Uses n4 > 0 in CLI, to select. Notes in Effects/EffectMgr.cpp.
+
+2016-2-7 Will
+- Corrected man page.
+
 2016-2-5 Will (effects)
 - Started separation of data from GUI. Only Reverb names yet.
   'test' from CLI

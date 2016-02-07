@@ -28,6 +28,8 @@
 #include "Misc/SynthEngine.h"
 #include "Effects/EffectMgr.h"
 
+static Reverb *reverb;
+
 EffectMgr::EffectMgr(const bool insertion_, SynthEngine *_synth) :
     Presets(_synth),
     insertion(insertion_),
@@ -63,20 +65,50 @@ void EffectMgr::defaults(void)
 
 string EffectMgr::names(unsigned char effnum, unsigned char presnum, unsigned char group)
 {
-    Reverb *reverb;
-    if (effnum > 8)
-        return "Invalid";
-    string out = "";
+    if (effnum == 0 or effnum > numEffects)
+        return "No Effect";
+     /*
+      * effect numbers start from 1 as 0 represents 'no effect'
+      * group 0 is the effects numbered preset name
+      * group 1 is not currently used
+      * group 2 is the effects numbered control name
+      * group 3 is an abbreviated control name
+      */
+     
     switch (effnum)
     {
         case 1:
             return reverb->listNames(presnum, group);
             break;
         default:
-            out = "Eff test ";
+            string out = "Eff test ";
             out += (char)(effnum + 48);
             return out;
     }
+}
+
+int EffectMgr::limits(unsigned char effnum, unsigned char cmdnum, bool group)
+{
+    /*
+     * if group is false, out of bound cmd returns number of presets
+     * otherwise control min value
+     * if group is true, out of band cmd returns number of controls
+     * otherwise control max value
+     * out of band can be -1
+     * control limits are all currently 0 or 127 but may change in the future
+     */
+
+    switch (effnum)
+    {
+        case 0:
+            return numEffects;
+        case 1:
+            return reverb->listLimits(cmdnum, group);
+            break;
+        default:
+            return -1;
+    }
+
 }
 
 
