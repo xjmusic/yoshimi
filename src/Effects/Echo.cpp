@@ -4,6 +4,7 @@
     Original ZynAddSubFX author Nasca Octavian Paul
     Copyright (C) 2002-2005 Nasca Octavian Paul
     Copyright 2009-2011, Alan Calvert
+    Copyright 20013-2016, Will Godfrey
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -24,6 +25,67 @@
 
 #include "Misc/SynthEngine.h"
 #include "Effects/Echo.h"
+
+const string EnamesS [] = {
+    "Echo 1", "Echo 2", "Echo 3", "Simple Echo", "Canyon", "Panning Echo 1", "Panning Echo 2", "Panning Echo 3", "Feedback Echo", "Echo"
+};
+const unsigned char EnamesC = 9;
+
+const string EcontrolS [] = {
+    "DryWet", "Panning", "Delay", "LRdelay", "LRcross", "Feedback",  "Damping"
+};
+
+const string EcontrolShortS [] = {
+    "D/W", "Pan", "Delay", "LRdl.", "LRc.", "Fb.", "Damp"
+};
+const unsigned char EcontrolC = 7;
+
+const int EcontrolUpper [] = {127,127,127,127,127,127,127};
+const int EcontrolLower [] = {0,0,0,0,0,0,0};
+
+string Echo::listNames(unsigned char num, unsigned char group)
+{
+    switch(group)
+    {
+        case 0:
+            if (num >= EnamesC)
+                num = EnamesC;
+            return EnamesS [num];
+            break;
+        case 2:
+            if (num >= EcontrolC)
+                return "Invalid";
+            return EcontrolS [num];
+            break;
+        case 3:
+            if (num >= EcontrolC)
+                return "Invalid";
+            return EcontrolShortS [num];
+            break;
+        case 1:
+        default:
+            return "Invalid";
+            break;
+    }
+}
+
+
+int Echo::listLimits(unsigned char num, bool group)
+{
+    if (!group)
+    {
+        if (num >= EcontrolC)
+            return EnamesC;
+        return EcontrolLower [num];
+    }
+    else
+    {
+        if (num >= EcontrolC)
+            return EcontrolC;
+        return EcontrolUpper [num];
+    }  
+}
+
 
 Echo::Echo(bool insertion_, float* efxoutl_, float* efxoutr_, SynthEngine *_synth) :
     Effect(insertion_, efxoutl_, efxoutr_, NULL, 0),

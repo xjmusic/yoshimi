@@ -28,6 +28,67 @@
 
 #define MAX_CHORUS_DELAY 250.0f // ms
 
+const string CnamesS [] = {
+    "Chorus 1", "Chorus 2", "Chorus 3", "Celeste 1", "Celeste 2", "Flange 1", "Flange 2", "Flange 3", "Flange 4", "Flange 5", "Chorus"
+};
+const unsigned char CnamesC = 10;
+
+const string CcontrolS [] = {
+    "DryWet", "Panning", "Frequency", "Random", "LFO type", "Stereo",  "Depth", "Delay", "Feedback", "LR cross", "Flange mode", "Subtract",
+};
+
+const string CcontrolShortS [] = {
+    "D/W", "Pan", "Freq", "Rnd", "LFO", "St.df", "Dpth","Delay", "Fb", "FM", "L/R", "Subtract"
+};
+const unsigned char CcontrolC = 12;
+
+const int CcontrolUpper [] = {127,127,127,127,127,127,127,127,127,127,127,127};
+const int CcontrolLower [] = {0,0,0,0,0,0,0,0,0,0,0,0};
+
+string Chorus::listNames(unsigned char num, unsigned char group)
+{
+    switch(group)
+    {
+        case 0:
+            if (num >= CnamesC)
+                num = CnamesC;
+            return CnamesS [num];
+            break;
+        case 2:
+            if (num >= CcontrolC)
+                return "Invalid";
+            return CcontrolS [num];
+            break;
+        case 3:
+            if (num >= CcontrolC)
+                return "Invalid";
+            return CcontrolShortS [num];
+            break;
+        case 1:
+        default:
+            return "Invalid";
+            break;
+    }
+}
+
+
+int Chorus::listLimits(unsigned char num, bool group)
+{
+    if (!group)
+    {
+        if (num >= CcontrolC)
+            return CnamesC;
+        return CcontrolLower [num];
+    }
+    else
+    {
+        if (num >= CcontrolC)
+            return CcontrolC;
+        return CcontrolUpper [num];
+    }  
+}
+
+
 Chorus::Chorus(bool insertion_, float *const efxoutl_, float *efxoutr_, SynthEngine *_synth) :
     Effect(insertion_, efxoutl_, efxoutr_, NULL, 0),
     lfo(_synth),

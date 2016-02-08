@@ -35,41 +35,41 @@ using namespace std;
 
 // todo: EarlyReflections, Prdelay, Perbalance
 
-string namesS [] = {
-    "cathedral 1", "cathedral 2", "cathedral 3", "hall 1", "hall 2", "room 1", "room 2", "basement", "tunnel", "echoed 1", "echoed 2", "very long 1", "very long 2", "Reverb"
+const string RnamesS [] = {
+    "Cathedral 1", "Cathedral 2", "Cathedral 3", "Hall 1", "Hall 2", "Room 1", "Room 2", "Basement", "Tunnel", "Echoed 1", "Echoed 2", "Very Long 1", "Very Long 2", "Reverb"
 };
-unsigned char namesC = 13;
+const unsigned char RnamesC = 13;
 
-string controlS [] = {
+const string RcontrolS [] = {
     "DryWet", "Panning", "Time", "iDelay", "iDelayFeedback", "rDelay", "rBalance", "LowPassFilter", "HighPassFilter", "Damping", "Type", "RoomSize", "Bandwidth"
 };
 
-string controlShortS [] = {
+const string RcontrolShortS [] = {
     "D/W", "Pan", "Time", "i.del", "i.delfb", "r.bal", "E/R", "LPF", "HPF", "Damp", "Type", "R.S", "BW"
 };
-unsigned char controlC = 13;
+const unsigned char RcontrolC = 13;
 
-int controlUpper [] = {127,127,127,127,127,127,127,127,127,127,127,127,127};
-int controlLower [] = {0,0,0,0,0,0,0,0,0,0,0,0,0};
+const int RcontrolUpper [] = {127,127,127,127,127,127,127,127,127,127,127,127,127};
+const int RcontrolLower [] = {0,0,0,0,0,0,0,0,0,0,0,0,0};
 
 string Reverb::listNames(unsigned char num, unsigned char group)
 {
     switch(group)
     {
         case 0:
-            if (num > namesC)
-                num = namesC;
-            return namesS [num];
+            if (num >= RnamesC)
+                num = RnamesC;
+            return RnamesS [num];
             break;
         case 2:
-            if (num > controlC)
+            if (num >= RcontrolC)
                 return "Invalid";
-            return controlS [num];
+            return RcontrolS [num];
             break;
         case 3:
-            if (num > controlC)
+            if (num >= RcontrolC)
                 return "Invalid";
-            return controlShortS [num];
+            return RcontrolShortS [num];
             break;
         case 1:
         default:
@@ -83,15 +83,15 @@ int Reverb::listLimits(unsigned char num, bool group)
 {
     if (!group)
     {
-        if (num >= namesC)
-            return namesC;
-        return controlLower [num];
+        if (num >= RcontrolC)
+            return RnamesC;
+        return RcontrolLower [num];
     }
     else
     {
-        if (num >= controlC)
-            return controlC;
-        return controlUpper [num];
+        if (num >= RcontrolC)
+            return RcontrolC;
+        return RcontrolUpper [num];
     }  
 }
 

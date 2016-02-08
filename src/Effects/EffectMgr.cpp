@@ -29,6 +29,9 @@
 #include "Effects/EffectMgr.h"
 
 static Reverb *reverb;
+static Echo *echo;
+static Chorus *chorus;
+static Phaser *phaser;
 
 EffectMgr::EffectMgr(const bool insertion_, SynthEngine *_synth) :
     Presets(_synth),
@@ -70,6 +73,7 @@ string EffectMgr::names(unsigned char effnum, unsigned char presnum, unsigned ch
      /*
       * effect numbers start from 1 as 0 represents 'no effect'
       * group 0 is the effects numbered preset name
+      * out of band is effect name (can be -1)
       * group 1 is not currently used
       * group 2 is the effects numbered control name
       * group 3 is an abbreviated control name
@@ -79,6 +83,15 @@ string EffectMgr::names(unsigned char effnum, unsigned char presnum, unsigned ch
     {
         case 1:
             return reverb->listNames(presnum, group);
+            break;
+        case 2:
+            return echo->listNames(presnum, group);
+            break;
+        case 3:
+            return chorus->listNames(presnum, group);
+            break;
+        case 4:
+            return phaser->listNames(presnum, group);
             break;
         default:
             string out = "Eff test ";
@@ -104,6 +117,15 @@ int EffectMgr::limits(unsigned char effnum, unsigned char cmdnum, bool group)
             return numEffects;
         case 1:
             return reverb->listLimits(cmdnum, group);
+            break;
+        case 2:
+            return echo->listLimits(cmdnum, group);
+            break;
+        case 3:
+            return chorus->listLimits(cmdnum, group);
+            break;
+        case 4:
+            return phaser->listLimits(cmdnum, group);
             break;
         default:
             return -1;

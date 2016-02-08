@@ -1,7 +1,10 @@
 yoshimi 1.3.x
 
+2016-2-8 Will (effects)
+- Now implemented for Echo, Chorus & Phaser.
+
 2016-2-7 Will (effects)
-- implemented effect control limit reporting, still only reverb.
+- Implemented effect control limit reporting, still only reverb.
   Uses n4 > 0 in CLI, to select. Notes in Effects/EffectMgr.cpp.
 
 2016-2-7 Will

@@ -4,6 +4,7 @@
     Original ZynAddSubFX author Nasca Octavian Paul
     Copyright (C) 2002-2005 Nasca Octavian Paul
     Copyright 2009-2011, Alan Calvert
+    Copyright 20013-2016, Will Godfrey
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -30,6 +31,66 @@
 #define PHASER_LFO_SHAPE 2
 #define ONE_  0.99999f        // To prevent LFO ever reaching 1.0f for filter stability purposes
 #define ZERO_ 0.00001f        // Same idea as above.
+
+const string PnamesS [] = {
+    "Phaser 1", "Phaser 2", "Phaser 3", "Phaser 4", "Phaser 5", "Phaser 6", "APhaser 1", "APhaser 2", "APhaser 3", "APhaser 4", "APhaser 5", "APhaser 6", "Phaser"
+};
+const unsigned char PnamesC = 12;
+
+const string PcontrolS [] = {
+    "DryWet", "Panning", "Frequency", "Randomness", "LFO type", "Stereo",  "Depth", "Feedback", "Stages", "LRcross", "Subtract", "Phase", "Hyper", "Distortion", "Analog"
+};
+
+const string PcontrolShortS [] = {
+    "D/W", "Pan", "Freq", "Rnd", "LFO", "St. df",  "Depth", "Fb", "Stages", "L/R", "Subtract", "Phase", "Hyper", "Dist", "Analog"
+};
+const unsigned char PcontrolC = 14;
+
+const int PcontrolUpper [] = {127,127,127,127,127,127,127,127,127,127,127,127,127,127};
+const int PcontrolLower [] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+
+string Phaser::listNames(unsigned char num, unsigned char group)
+{
+    switch(group)
+    {
+        case 0:
+            if (num >= PnamesC)
+                num = PnamesC;
+            return PnamesS [num];
+            break;
+        case 2:
+            if (num >= PcontrolC)
+                return "Invalid";
+            return PcontrolS [num];
+            break;
+        case 3:
+            if (num >= PcontrolC)
+                return "Invalid";
+            return PcontrolShortS [num];
+            break;
+        case 1:
+        default:
+            return "Invalid";
+            break;
+    }
+}
+
+
+int Phaser::listLimits(unsigned char num, bool group)
+{
+    if (!group)
+    {
+        if (num >= PcontrolC)
+            return PnamesC;
+        return PcontrolLower [num];
+    }
+    else
+    {
+        if (num >= PcontrolC)
+            return PcontrolC;
+        return PcontrolUpper [num];
+    }  
+}
 
 
 Phaser::Phaser(bool insertion_, float *efxoutl_, float *efxoutr_, SynthEngine *_synth) :

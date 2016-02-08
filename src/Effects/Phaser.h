@@ -4,6 +4,7 @@
     Original ZynAddSubFX author Nasca Octavian Paul
     Copyright (C) 2002-2005 Nasca Octavian Paul
     Copyright 2009, Alan Calvert
+    Copyright 20013-2016, Will Godfrey
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -36,6 +37,9 @@ class SynthEngine;
 class Phaser : public Effect
 {
     public:
+        string listNames(unsigned char num, unsigned char group); 
+        int listLimits(unsigned char num, bool group);
+        
         Phaser(bool insertion_, float *efxoutl_, float *efxoutr_, SynthEngine *_synth);
         ~Phaser();
         void out(float *smpsl, float *smpsr);
