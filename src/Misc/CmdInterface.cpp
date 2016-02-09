@@ -1206,6 +1206,34 @@ bool CmdInterface::cmdIfaceProcessCommand()
 
     if (matchnMove(4, point, "test"))
     {
+        /*
+         * Test routine for direct access to all effect names & limits
+         * -1 can be used as out of band parameter
+         * 
+         * EQ (7) is very strange and still not quite right :(
+         * 
+         * if t4 is 0 return string
+         * t1 effect number. 0 or out of band returns "No Effect'
+         * 
+         * t2 preset or controller number to read
+         * out of band returns effect name
+         * t3 list type
+         *   0 - effect/preset name
+         *   1 - not used
+         *   2 - long controller name
+         *   3 - short controller name
+         * out of band retunes 'Invalid"
+         * 
+         * if t4 is 1 return value
+         * t1 effect number. 0 or out of band returns number of effects
+         * 
+         * t2 preset or controller number to read
+         * out of band returns number of presets or number of controls
+         * 
+         * t3 data type
+         *   0 - min value (number of presets of t2 out of band)
+         *   1 - max value (number of controls of t2 out of band)
+         */
         int t1, t2, t3, t4;
         t1 = t2 = t3 = t4 = 0;
         if (point[0] != 0)

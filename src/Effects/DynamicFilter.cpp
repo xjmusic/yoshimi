@@ -4,7 +4,7 @@
     Original ZynAddSubFX author Nasca Octavian Paul
     Copyright (C) 2002-2005 Nasca Octavian Paul
     Copyright 2009-2011, Alan Calvert
-    Copyright 2014, Will Godfrey
+    Copyright 2013 - 2016, Will Godfrey
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -25,6 +25,67 @@
 
 #include "Misc/SynthEngine.h"
 #include "Effects/DynamicFilter.h"
+
+const string DFnamesS [] = {
+    "WahWah", "AutoWah", "Sweep", "VocalMorph1", "VocalMorph2", "DynFilter"
+};
+const unsigned char DFnamesC = 5;
+
+const string DFcontrolS [] = {
+    "DryWet", "Panning", "Frequency", "Random", "LFO type", "Stereo",  "LFO Depth", "Amp Sense", "Amp Smooth", "Amp Invert"
+};
+
+const string DFcontrolShortS [] = {
+    "D/W", "Pan", "Freq", "Rnd", "LFO", "St.df", "Dpth","A.S.", "A.M.", "A.Inv."
+};
+const unsigned char DFcontrolC = 10;
+
+const int DFcontrolUpper [] = {127,127,127,127,127,127,127,127,127,127};
+const int DFcontrolLower [] = {0,0,0,0,0,0,0,0,0,0};
+
+string DynamicFilter::listNames(unsigned char num, unsigned char group)
+{
+    switch(group)
+    {
+        case 0:
+            if (num >= DFnamesC)
+                num = DFnamesC;
+            return DFnamesS [num];
+            break;
+        case 2:
+            if (num >= DFcontrolC)
+                return "Invalid";
+            return DFcontrolS [num];
+            break;
+        case 3:
+            if (num >= DFcontrolC)
+                return "Invalid";
+            return DFcontrolShortS [num];
+            break;
+        case 1:
+        default:
+            return "Invalid";
+            break;
+    }
+}
+
+
+int DynamicFilter::listLimits(unsigned char num, bool group)
+{
+    if (!group)
+    {
+        if (num >= DFcontrolC)
+            return DFnamesC;
+        return DFcontrolLower [num];
+    }
+    else
+    {
+        if (num >= DFcontrolC)
+            return DFcontrolC;
+        return DFcontrolUpper [num];
+    }  
+}
+
 
 DynamicFilter::DynamicFilter(bool insertion_, float *efxoutl_, float *efxoutr_, SynthEngine *_synth) :
     Effect(insertion_, efxoutl_, efxoutr_, new FilterParams(0, 64, 64, _synth), 0),

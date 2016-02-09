@@ -34,7 +34,7 @@ const string CnamesS [] = {
 const unsigned char CnamesC = 10;
 
 const string CcontrolS [] = {
-    "DryWet", "Panning", "Frequency", "Random", "LFO type", "Stereo",  "Depth", "Delay", "Feedback", "LR cross", "Flange mode", "Subtract",
+    "DryWet", "Panning", "Frequency", "Random", "LFO type", "Stereo",  "Depth", "Delay", "Feedback", "LR cross", "Flange mode", "Subtract"
 };
 
 const string CcontrolShortS [] = {

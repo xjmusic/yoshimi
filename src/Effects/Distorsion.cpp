@@ -4,6 +4,7 @@
     Original ZynAddSubFX author Nasca Octavian Paul
     Copyright (C) 2002-2009 Nasca Octavian Paul
     Copyright 2009-2011, Alan Calvert
+    Copyright 20013-2016, Will Godfrey
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -24,6 +25,67 @@
 
 #include "Misc/SynthEngine.h"
 #include "Effects/Distorsion.h"
+
+const string DnamesS [] = {
+    "Overdrive 1", "Overdrive 2", "A.Exciter 1", "A.Exciter 2", "Guitar Amp", "Quantisize", "Distortion"
+};
+const unsigned char DnamesC = 6;
+
+const string DcontrolS [] = {
+    "DryWet", "Panning", "LR cross", "Drive", "Level", "Type",  "Negative", "Low Pass", "High Pass", "Stereo", "Prefilter"
+};
+
+const string DcontrolShortS [] = {
+    "D/W", "Pan", "L/Rc.", "Drive", "Level", "Type","Neg", "LPF", "HPF", "St.", "PF"
+};
+const unsigned char DcontrolC = 11;
+
+const int DcontrolUpper [] = {127,127,127,127,127,127,127,127,127,127,127};
+const int DcontrolLower [] = {0,0,0,0,0,0,0,0,0,0,0};
+
+string Distorsion::listNames(unsigned char num, unsigned char group)
+{
+    switch(group)
+    {
+        case 0:
+            if (num >= DnamesC)
+                num = DnamesC;
+            return DnamesS [num];
+            break;
+        case 2:
+            if (num >= DcontrolC)
+                return "Invalid";
+            return DcontrolS [num];
+            break;
+        case 3:
+            if (num >= DcontrolC)
+                return "Invalid";
+            return DcontrolShortS [num];
+            break;
+        case 1:
+        default:
+            return "Invalid";
+            break;
+    }
+}
+
+
+int Distorsion::listLimits(unsigned char num, bool group)
+{
+    if (!group)
+    {
+        if (num >= DcontrolC)
+            return DnamesC;
+        return DcontrolLower [num];
+    }
+    else
+    {
+        if (num >= DcontrolC)
+            return DcontrolC;
+        return DcontrolUpper [num];
+    }  
+}
+
 
 Distorsion::Distorsion(bool insertion_, float *efxoutl_, float *efxoutr_, SynthEngine *_synth) :
     Effect(insertion_, efxoutl_, efxoutr_, NULL, 0),

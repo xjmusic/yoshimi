@@ -25,6 +25,83 @@
 #include "Misc/SynthEngine.h"
 #include "Effects/EQ.h"
 
+const string QnamesS [] = {
+    "EQ"
+};
+const unsigned char QnamesC = 0;
+
+const string QcontrolS [] = {
+    "Gain", "Type", "Frequency", "Gain", "Q", "Stages"
+};
+
+const string QcontrolShortS [] = {
+    "Gain", "T.", "Freq", "Gain", "Q", "St."
+};
+const unsigned char QcontrolC = 6;
+
+const int QcontrolUpper [] = {127,127,127,127,127,127};
+const int QcontrolLower [] = {0,0,0,0,0,0};
+
+string EQ::listNames(unsigned char num, unsigned char group)
+{
+    int bp = 0;
+    char nb;
+    string suffix = "";
+    if (num < 10)
+        bp = 0;
+    else
+    {
+        bp = (num - 10) / 5;
+        if (bp < MAX_EQ_BANDS)
+        {
+            bp += 1;
+            nb = (num % 5) + 48;
+            suffix = " - Band ";
+            suffix += nb;
+        }
+    }
+    
+    switch(group)
+    {
+        case 0:
+            return QnamesS [0];
+            break;
+        case 2:
+            if (bp >= QcontrolC)
+                return "Invalid";
+            return QcontrolS [bp] + suffix;
+            break;
+        case 3:
+            if (bp >= QcontrolC)
+                return "Invalid";
+            return QcontrolShortS [bp] + suffix;
+            break;
+        case 1:
+        default:
+            return "Invalid";
+            break;
+    }
+}
+
+
+int EQ::listLimits(unsigned char num, bool group)
+{
+    int bp = (num - 10) / 5;
+    if (num < 10)
+        bp = QcontrolC;
+    
+    if (!group)
+    {
+        if (bp >= QcontrolC)
+            return QnamesC;
+        return QcontrolLower [bp];
+    }
+    else if (bp >= QcontrolC)
+        return QcontrolC;
+    return QcontrolUpper [bp];
+}
+
+
 EQ::EQ(bool insertion_, float *efxoutl_, float *efxoutr_, SynthEngine *_synth) :
     Effect(insertion_, efxoutl_, efxoutr_, NULL, 0),
     synth(_synth)

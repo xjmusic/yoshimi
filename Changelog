@@ -1,5 +1,9 @@
 yoshimi 1.3.x
 
+2016-2-9 Will (effects)
+- All implemented, but EQ not quite right.
+  Also some named list parameters and dynfilter/filter not handled.
+
 2016-2-8 Will (effects)
 - Now implemented for Echo, Chorus & Phaser.
 

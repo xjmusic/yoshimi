@@ -32,6 +32,10 @@ static Reverb *reverb;
 static Echo *echo;
 static Chorus *chorus;
 static Phaser *phaser;
+static Alienwah *alienwah;
+static Distorsion *distorsion;
+static EQ *eq;
+static DynamicFilter *dynamicfilter;
 
 EffectMgr::EffectMgr(const bool insertion_, SynthEngine *_synth) :
     Presets(_synth),
@@ -93,10 +97,20 @@ string EffectMgr::names(unsigned char effnum, unsigned char presnum, unsigned ch
         case 4:
             return phaser->listNames(presnum, group);
             break;
+        case 5:
+            return alienwah->listNames(presnum, group);
+            break;
+        case 6:
+            return distorsion->listNames(presnum, group);
+            break;
+        case 7:
+            return eq->listNames(presnum, group);
+            break;
+        case 8:
+            return dynamicfilter->listNames(presnum, group);
+            break;
         default:
-            string out = "Eff test ";
-            out += (char)(effnum + 48);
-            return out;
+            return "Eff test too high";
     }
 }
 
@@ -126,6 +140,18 @@ int EffectMgr::limits(unsigned char effnum, unsigned char cmdnum, bool group)
             break;
         case 4:
             return phaser->listLimits(cmdnum, group);
+            break;
+        case 5:
+            return alienwah->listLimits(cmdnum, group);
+            break;
+        case 6:
+            return distorsion->listLimits(cmdnum, group);
+            break;
+        case 7:
+            return eq->listLimits(cmdnum, group);
+            break;
+        case 8:
+            return dynamicfilter->listLimits(cmdnum, group);
             break;
         default:
             return -1;

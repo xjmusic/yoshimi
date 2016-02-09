@@ -4,6 +4,7 @@
     Original ZynAddSubFX author Nasca Octavian Paul
     Copyright (C) 2002-2009 Nasca Octavian Paul
     Copyright 2009-2011, Alan Calvert
+    Copyright 20013-2016, Will Godfrey
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -26,6 +27,66 @@ using namespace std;
 
 #include "Misc/SynthEngine.h"
 #include "Effects/Alienwah.h"
+const string AnamesS [] = {
+    "Alienwah 1", "Alienwah 2", "Alienwah 3", "Alienwah 4", "Alienwah"
+};
+const unsigned char AnamesC = 4;
+
+const string AcontrolS [] = {
+    "DryWet", "Panning", "Frequency", "Random", "LFO type", "Stereo",  "Depth", "Feedback", "Delay", "LR cross", "Phase"
+};
+
+const string AcontrolShortS [] = {
+    "D/W", "Pan", "Freq", "Rnd", "LFO", "St.df", "Dpth", "Fb", "Delay", "L/R", "Phase"
+};
+const unsigned char AcontrolC = 11;
+
+const int AcontrolUpper [] = {127,127,127,127,127,127,127,127,127,127,127};
+const int AcontrolLower [] = {0,0,0,0,0,0,0,0,0,0,0};
+
+string Alienwah::listNames(unsigned char num, unsigned char group)
+{
+    switch(group)
+    {
+        case 0:
+            if (num >= AnamesC)
+                num = AnamesC;
+            return AnamesS [num];
+            break;
+        case 2:
+            if (num >= AcontrolC)
+                return "Invalid";
+            return AcontrolS [num];
+            break;
+        case 3:
+            if (num >= AcontrolC)
+                return "Invalid";
+            return AcontrolShortS [num];
+            break;
+        case 1:
+        default:
+            return "Invalid";
+            break;
+    }
+}
+
+
+int Alienwah::listLimits(unsigned char num, bool group)
+{
+    if (!group)
+    {
+        if (num >= AcontrolC)
+            return AnamesC;
+        return AcontrolLower [num];
+    }
+    else
+    {
+        if (num >= AcontrolC)
+            return AcontrolC;
+        return AcontrolUpper [num];
+    }  
+}
+
 
 Alienwah::Alienwah(bool insertion_, float *efxoutl_, float *efxoutr_, SynthEngine *_synth) :
     Effect(insertion_, efxoutl_, efxoutr_, NULL, 0),
