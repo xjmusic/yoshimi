@@ -56,7 +56,7 @@ bool JackEngine::connectServer(string server)
     {
         if (!openJackClient(server) && tries < 2)
         {
-            synth->getRuntime().Log("Failed to open jack client, trying again", true);
+            synth->getRuntime().Log("Failed to open jack client, trying again", 1);
             usleep(3333);
         }
     }
@@ -131,7 +131,7 @@ bool JackEngine::openJackClient(string server)
     if (jackClient)
         return true;
     else
-        synth->getRuntime().Log("Failed jack_client_open(), status: " + synth->getRuntime().asHexString((int)jstatus), true);
+        synth->getRuntime().Log("Failed jack_client_open(), status: " + synth->getRuntime().asHexString((int)jstatus), 1);
     return false;
 }
 
@@ -182,7 +182,7 @@ bool JackEngine::Start(void)
       && jack_connect(jackClient,synth->getRuntime().midiDevice.c_str(),jack_port_name(midi.port)))
     {
         synth->getRuntime().Log("Didn't find jack MIDI source '"
-        + synth->getRuntime().midiDevice + "'", true);
+        + synth->getRuntime().midiDevice + "'", 1);
         synth->getRuntime().midiDevice = "";
     }
     return true;
@@ -552,7 +552,7 @@ bool JackEngine::processMidi(jack_nframes_t nframes)
                     break;
 
                 default: // wot, more? commented out some progs spam us :(
-                    synth->getRuntime().Log("other event: " + asString((int)ev), true);
+                    synth->getRuntime().Log("other event: " + asString((int)ev), 1);
                     break;
             }
         }
@@ -563,7 +563,7 @@ bool JackEngine::processMidi(jack_nframes_t nframes)
 
 int JackEngine::_xrunCallback(void *arg)
 {
-    ((JackEngine *)arg)->synth->getRuntime().Log("xrun reported", true);
+    ((JackEngine *)arg)->synth->getRuntime().Log("xrun reported", 2);
     return 0;
 }
 

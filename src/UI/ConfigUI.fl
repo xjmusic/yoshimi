@@ -61,7 +61,7 @@ class ConfigUI {selected : {private MiscFuncs}
       } {
         Fl_Group {} {
           label {Main settings}
-          xywh {5 25 382 277} labelsize 12 hide
+          xywh {5 25 382 277} labelsize 12
         } {
           Fl_Choice {} {
             label {* AddSynth Oscillator Size}
@@ -221,7 +221,7 @@ else
     synth->getGuiMaster()->Reports->deactivate();
     synth->getGuiMaster()->yoshiLog->Hide();
 }}
-            tooltip {System errors always go to stderr} xywh {200 195 150 20} down_box BORDER_BOX labelsize 12 textsize 13
+            tooltip {Some system errors always go to stderr} xywh {200 195 150 20} down_box BORDER_BOX labelsize 12 textsize 13
             code0 {o->value(synth->getRuntime().toConsole);}
           } {
             MenuItem {} {
@@ -244,7 +244,7 @@ else
     synth->getRuntime().hideErrors = o->value();
     synth->getRuntime().configChanged = true;
 }}
-            tooltip {Only affects stderr output} xywh {322 219 27 25} down_box DOWN_BOX labelsize 12 align 4
+            xywh {322 219 27 25} down_box DOWN_BOX labelsize 12 align 4
             code0 {o->value(synth->getRuntime().hideErrors);}
           }
           Fl_Check_Button {} {
@@ -315,7 +315,7 @@ synth->getRuntime().configChanged = true;}
         }
         Fl_Group alsaTab {
           label Alsa
-          xywh {5 25 384 277} labelsize 12
+          xywh {5 25 384 277} labelsize 12 hide
         } {
           Fl_Input alsaSource {
             label {Alsa Midi Source}
@@ -395,7 +395,7 @@ synth->getRuntime().configChanged = true;}
                 }
                 synth->getRuntime().Samplerate = sample_rate;
                 synth->getRuntime().configChanged = true;}
-            xywh {195 215 120 54} labelsize 12 align 4 when 1 textsize 12
+            xywh {195 199 121 66} labelsize 12 align 4 when 1 textsize 12
             code0 {//
                 o->add("192000");
                 o->add("96000");

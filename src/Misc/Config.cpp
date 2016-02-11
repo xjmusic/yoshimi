@@ -118,7 +118,7 @@ Config::Config(SynthEngine *_synth, int argc, char **argv) :
     xmlType(0),
     EnableProgChange(1), // default will be inverted
     toConsole(0),
-    hideErrors(false),
+    hideErrors(0),
     logXMLheaders(0),
     configChanged(false),
     rtprio(50),
@@ -447,7 +447,6 @@ bool Config::loadConfig(void)
     {
         Log("ConfigFile " + resConfigFile + " not found, will use default settings");
         configChanged = true; // give the user the choice
-        //saveConfig();
     }
     else
     {
@@ -639,7 +638,7 @@ void Config::saveSessionData(string savefile)
     XMLwrapper *xmltree = new XMLwrapper(synth);
     if (!xmltree)
     {
-        Log("saveSessionData failed xmltree allocation", true);
+        Log("saveSessionData failed xmltree allocation", 1);
         return;
     }
     addConfigXML(xmltree);
@@ -648,7 +647,7 @@ void Config::saveSessionData(string savefile)
     if (xmltree->saveXMLfile(savefile))
         Log("Session data saved to " + savefile);
     else
-        Log("Failed to save session data to " + savefile, true);
+        Log("Failed to save session data to " + savefile, 1);
 }
 
 
@@ -660,12 +659,12 @@ bool Config::restoreSessionData(string sessionfile, bool startup)
         sessionfile += ".state";
     if (!sessionfile.size() || !isRegFile(sessionfile))
     {
-        Log("Session file " + sessionfile + " not available", true);
+        Log("Session file " + sessionfile + " not available", 1);
         goto end_game;
     }
     if (!(xml = new XMLwrapper(synth)))
     {
-        Log("Failed to init xmltree for restoreState", true);
+        Log("Failed to init xmltree for restoreState", 1);
         goto end_game;
     }
 
@@ -689,7 +688,7 @@ bool Config::extractRuntimeData(XMLwrapper *xml)
 {
     if (!xml->enterbranch("RUNTIME"))
     {
-        Log("Config extractRuntimeData, no RUNTIME branch", true);
+        Log("Config extractRuntimeData, no RUNTIME branch", 1);
         return false;
     }
 // need to put current root and bank here
@@ -710,11 +709,11 @@ void Config::addRuntimeXML(XMLwrapper *xml)
 }
 
 
-void Config::Log(string msg, bool tostderr)
+void Config::Log(string msg, char tostderr)
 {
-    if (tostderr && hideErrors)
+    if ((tostderr & 2) && hideErrors)
         return;
-    if (showGui && !tostderr && toConsole)
+    if (showGui && !(tostderr & 1) && toConsole)
         LogList.push_back(msg);
     else
         cerr << msg << endl;
@@ -793,7 +792,7 @@ bool Config::startThread(pthread_t *pth, void *(*thread_fn)(void*), void *arg,
                     {
                         Log("Failed to set SCHED_FIFO policy in thread attribute "
                                     + string(strerror(errno))
-                                    + " (" + asString(chk) + ")", true);
+                                    + " (" + asString(chk) + ")", 1);
                         schedfifo = false;
                         continue;
                     }
@@ -801,7 +800,7 @@ bool Config::startThread(pthread_t *pth, void *(*thread_fn)(void*), void *arg,
                     {
                         Log("Failed to set inherit scheduler thread attribute "
                                     + string(strerror(errno)) + " ("
-                                    + asString(chk) + ")", true);
+                                    + asString(chk) + ")", 1);
                         schedfifo = false;
                         continue;
                     }
@@ -814,7 +813,7 @@ bool Config::startThread(pthread_t *pth, void *(*thread_fn)(void*), void *arg,
                     {
                         Log("Failed to set thread priority attribute ("
                                     + asString(chk) + ")  "
-                                    + string(strerror(errno)), true);
+                                    + string(strerror(errno)), 1);
                         schedfifo = false;
                         continue;
                     }
@@ -833,21 +832,21 @@ bool Config::startThread(pthread_t *pth, void *(*thread_fn)(void*), void *arg,
                 break;
             }
             else
-                Log("Failed to set thread detach state " + asString(chk), true);
+                Log("Failed to set thread detach state " + asString(chk), 1);
             pthread_attr_destroy(&attr);
         }
         else
-            Log("Failed to initialise thread attributes " + asString(chk), true);
+            Log("Failed to initialise thread attributes " + asString(chk), 1);
 
         if (schedfifo)
         {
             Log("Failed to start thread (sched_fifo) " + asString(chk)
-                + "  " + string(strerror(errno)), true);
+                + "  " + string(strerror(errno)), 1);
             schedfifo = false;
             continue;
         }
         Log("Failed to start thread (sched_other) " + asString(chk)
-            + "  " + string(strerror(errno)), true);
+            + "  " + string(strerror(errno)), 1);
         outcome = false;
         break;
     }
@@ -892,7 +891,7 @@ void Config::signalCheck(void)
 
 void Config::setInterruptActive(void)
 {
-    Log("Interrupt received", true);
+    Log("Interrupt received", 1);
     __sync_or_and_fetch(&sigIntActive, 0xFF);
 
     if( nsm )
