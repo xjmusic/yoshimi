@@ -89,6 +89,7 @@ static struct argp_option cmd_options[] = {
 
 Config::Config(SynthEngine *_synth, int argc, char **argv) :
     restoreState(false),
+    stateChanged(false),
     restoreJackSession(false),
     Samplerate(48000),
     Buffersize(256),
@@ -159,6 +160,9 @@ bool Config::Setup(int argc, char **argv)
 
     if (!loadConfig())
         return false;
+    
+    synth->installBanks(synth->getUniqueId());
+    synth->loadHistory(synth->getUniqueId());
 
     if(synth->getIsLV2Plugin()) //skip further setup for lv2 plugin instance.
         return true;
