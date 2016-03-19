@@ -5,7 +5,7 @@
     Copyright (C) 2002-2005 Nasca Octavian Paul
     Copyright 2009-2011, Alan Calvert
     Copyright 2013, Nikita Zlobin
-    Copyright 2014-2015, Will Godfrey & others
+    Copyright 2014-2016, Will Godfrey & others
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -133,8 +133,8 @@ Config::Config(SynthEngine *_synth, int argc, char **argv) :
     deadObjects(NULL),
     nextHistoryIndex(numeric_limits<unsigned int>::max()),
     sigIntActive(0),
-    ladi1IntActive(0),    
-    sse_level(0),    
+    ladi1IntActive(0),
+    sse_level(0),
     programcommand(string("yoshimi")),
     synth(_synth),
     bRuntimeSetupCompleted(false)
@@ -160,12 +160,19 @@ bool Config::Setup(int argc, char **argv)
 
     if (!loadConfig())
         return false;
-    
-    synth->installBanks(synth->getUniqueId());
-    synth->loadHistory(synth->getUniqueId());
 
     if(synth->getIsLV2Plugin()) //skip further setup for lv2 plugin instance.
+    {
+        /*
+         * These are needed here now, as for stand-alone they have
+         * been moved to main to give the users the impression of
+         * a faster startup, and reduce the likelyhood of thinking
+         * they failed and trying to start again.
+         */
+        synth->installBanks(synth->getUniqueId());
+        synth->loadHistory(synth->getUniqueId());
         return true;
+    }
     switch (audioEngine)
     {
         case alsa_audio:
@@ -229,7 +236,7 @@ bool Config::Setup(int argc, char **argv)
          * This is further complicated because the same functions are
          * being used by jack session.
          */
-    }    
+    }
     return true;
 }
 
@@ -403,7 +410,7 @@ string Config::masterCCtest(int cc)
 
 void Config::clearPresetsDirlist(void)
 {
-    for (int i = 0; i < MAX_PRESETS; ++i)
+    for (int i = 0; i < MAX_PRESET_DIRS; ++i)
         presetsDirlist[i].clear();
 }
 
@@ -427,7 +434,7 @@ bool Config::loadConfig(void)
     }
     string yoshimi = "/"; // for some reason it doesn't
     yoshimi += YOSHIMI; // like these as one line here
-    
+
     if (synth->getUniqueId() > 0)
         yoshimi += ("-" + asString(synth->getUniqueId()));
     string presetDir = ConfigDir + "/presets";
@@ -445,6 +452,7 @@ bool Config::loadConfig(void)
     if (!isRegFile(resConfigFile) && !isRegFile(ConfigFile))
     {
         Log("ConfigFile " + resConfigFile + " not found, will use default settings");
+        defaultPresets();
         configChanged = true; // give the user the choice
     }
     else
@@ -469,6 +477,30 @@ bool Config::loadConfig(void)
         }
     }
     return isok;
+}
+
+
+void Config::defaultPresets(void)
+{
+    string presetdirs[]  = {
+        "/usr/share/yoshimi/presets",
+        "/usr/local/share/yoshimi/presets",
+        "/usr/share/zynaddsubfx/presets",
+        "/usr/local/share/zynaddsubfx/presets",
+        string(getenv("HOME")) + "/.config/yoshimi/presets",
+        localPath("/presets"),
+        "end"
+    };
+    int i = 0;
+    while (presetdirs[i] != "end")
+    {
+        if (isDirectory(presetdirs[i]))
+        {
+            Log(presetdirs[i], 2);
+            presetsDirlist[i] = presetdirs[i];
+        }
+        ++ i;
+    }
 }
 
 
@@ -499,38 +531,28 @@ bool Config::extractConfigData(XMLwrapper *xml)
 
     // get preset dirs
     int count = 0;
-    for (int i = 0; i < MAX_PRESETS; ++i)
+    bool found = false;
+    for (int i = 0; i < MAX_PRESET_DIRS; ++i)
     {
         if (xml->enterbranch("PRESETSROOT", i))
         {
             string dir = xml->getparstr("presets_root");
             if (isDirectory(dir))
+            {
                 presetsDirlist[count++] = dir;
+                found = true;
+            }
             xml->exitbranch();
         }
     }
-    if (!count)
+    if (!found)
     {
-        string presetdirs[]  = {
-            "/usr/share/yoshimi/presets",
-            "/usr/local/share/yoshimi/presets",
-            "/usr/share/zynaddsubfx/presets",
-            "/usr/local/share/zynaddsubfx/presets",
-            string(getenv("HOME")) + "/.config/yoshimi/presets",
-            localPath("/presets"),
-            "end"
-        };
-        int i = 0;
-        while (presetdirs[i] != "end")
-        {
-            if (isDirectory(presetdirs[i]))
-                presetsDirlist[count++] = presetdirs[i];
-            ++ i;
-        }
+        defaultPresets();
+        configChanged = true; // give the user the choice
     }
-    
+
     Interpolation = xml->getpar("interpolation", Interpolation, 0, 1);
-    
+
     // engines
     audioEngine = (audio_drivers)xml->getpar("audio_engine", audioEngine, no_audio, alsa_audio);
     midiEngine = (midi_drivers)xml->getpar("midi_engine", midiEngine, no_midi, alsa_midi);
@@ -549,10 +571,10 @@ bool Config::extractConfigData(XMLwrapper *xml)
     midi_upper_voice_C = xml->getpar("midi_upper_voice_C", midi_upper_voice_C, 0, 128);
     EnableProgChange = 1 - xml->getpar("ignore_program_change", EnableProgChange, 0, 1); // inverted for Zyn compatibility
     enable_part_on_voice_load = xml->getpar("enable_part_on_voice_load", enable_part_on_voice_load, 0, 1);
-    
+
     //misc
     checksynthengines = xml->getpar("check_pad_synth", checksynthengines, 0, 1);
-    
+
     xml->exitbranch(); // CONFIGURATION
     return true;
 }
@@ -599,7 +621,7 @@ void Config::addConfigXML(XMLwrapper *xmltree)
     xmltree->addpar("sound_buffer_size", Buffersize);
     xmltree->addpar("oscil_size", Oscilsize);
 
-    for (int i = 0; i < MAX_PRESETS; ++i)
+    for (int i = 0; i < MAX_PRESET_DIRS; ++i)
         if (presetsDirlist[i].size())
         {
             xmltree->beginbranch("PRESETSROOT",i);
@@ -608,13 +630,13 @@ void Config::addConfigXML(XMLwrapper *xmltree)
         }
 
     xmltree->addpar("interpolation", Interpolation);
-    
+
     xmltree->addpar("audio_engine", synth->getRuntime().audioEngine);
     xmltree->addpar("midi_engine", synth->getRuntime().midiEngine);
-    
+
     xmltree->addparstr("linux_alsa_audio_dev", alsaAudioDevice);
     xmltree->addparstr("linux_alsa_midi_dev", alsaMidiDevice);
-    
+
     xmltree->addparstr("linux_jack_server", jackServer);
     xmltree->addparstr("linux_jack_midi_dev", jackMidiDevice);
 
@@ -723,7 +745,7 @@ void Config::StartupReport(MusicClient *musicClient)
 {
     Log(string(argp_program_version));
     Log("Clientname: " + musicClient->midiClientName());
-    string report = "Config: Audio: ";
+    string report = "Audio: ";
     switch (audioEngine)
     {
         case jack_audio:
@@ -736,7 +758,7 @@ void Config::StartupReport(MusicClient *musicClient)
             report += "nada";
     }
     report += (" -> '" + audioDevice + "'");
-    Log(report);
+    Log(report, 2);
     report = "Midi: ";
     switch (midiEngine)
     {
@@ -752,10 +774,10 @@ void Config::StartupReport(MusicClient *musicClient)
     if (!midiDevice.size())
         midiDevice = "default";
     report += (" -> '" + midiDevice + "'");
-    Log(report);
-    Log("Oscilsize: " + asString(synth->oscilsize));
-    Log("Samplerate: " + asString(synth->samplerate));
-    Log("Period size: " + asString(synth->buffersize));
+    Log(report, 2);
+    Log("Oscilsize: " + asString(synth->oscilsize), 2);
+    Log("Samplerate: " + asString(synth->samplerate), 2);
+    Log("Period size: " + asString(synth->buffersize), 2);
 }
 
 #endif
@@ -1308,6 +1330,12 @@ void GuiThreadMsg::processGuiMessages()
                 MasterUI *guiMaster = synth->getGuiMaster(false);
                 if(guiMaster && guiMaster->bankui)
                 {
+                    if (msg->index == 1)
+                    {
+                        // special case for first synth statup
+                        guiMaster->bankui->readbankcfg();
+                        guiMaster->bankui->rescan_for_banks(false);
+                    }
                     guiMaster->bankui->set_bank_slot();
                     guiMaster->bankui->refreshmainwindow();
                 }
