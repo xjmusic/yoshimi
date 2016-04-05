@@ -156,7 +156,7 @@ static void *mainGuiThread(void *arg)
     winSplash.clear_border();
     winSplash.border(false);
 
-    if (bShowGui)
+    if (bShowGui && firstRuntime->showSplash)
     {
         winSplash.position((Fl::w() - winSplash.w()) / 2, (Fl::h() - winSplash.h()) / 2);
         winSplash.show();
