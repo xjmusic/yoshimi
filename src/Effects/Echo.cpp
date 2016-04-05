@@ -104,6 +104,7 @@ Echo::Echo(bool insertion_, float* efxoutl_, float* efxoutr_, SynthEngine *_synt
     cleanup();
 }
 
+
 Echo::~Echo()
 {
     delete [] ldelay;
@@ -261,21 +262,27 @@ void Echo::changepar(int npar, unsigned char value)
         case 0:
             setvolume(value);
             break;
+
         case 1:
             setpanning(value);
             break;
+
         case 2:
             setdelay(value);
             break;
+
         case 3:
             setlrdelay(value);
             break;
+
         case 4:
             setlrcross(value);
             break;
+
         case 5:
             setfb(value);
             break;
+
         case 6:
             sethidamp(value);
             break;

@@ -188,6 +188,7 @@ void Chorus::out(float *smpsl, float *smpsr)
     }
 }
 
+
 // Cleanup the effect
 void Chorus::cleanup(void)
 {
