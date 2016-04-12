@@ -23,7 +23,7 @@ cmake_policy (SET CMP0004 OLD)
 if (POLICY CMP0046)
     cmake_policy (SET CMP0046 OLD)
 endif (POLICY CMP0046)
-set (YOSHIMI_VERSION "1.3.9")
+set (YOSHIMI_VERSION "1.3.9 M")
 file (WRITE version.txt "${YOSHIMI_VERSION}")
 
 set (CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -35,6 +35,7 @@ set (CMAKE_SKIP_RULE_DEPENDENCY OFF)
 message (STATUS "Building Yoshimi version ${YOSHIMI_VERSION} for ${CMAKE_SYSTEM_NAME}")
 
 include (CheckCSourceCompiles)
+include(GNUInstallDirs)
 
 mark_as_advanced (EXECUTABLE_OUTPUT_PATH)
 mark_as_advanced (LIBRARY_OUTPUT_PATH)
@@ -182,13 +183,19 @@ mark_as_advanced (FLTK_DIR)
 mark_as_advanced (FLTK_FLUID_EXECUTABLE)
 mark_as_advanced (FLTK_MATH_LIBRARY)
 
+
 # libncurses
-pkg_check_modules (LIBNCURSES REQUIRED ncurses)
+pkg_check_modules (LIBNCURSES ncurses)
 if (LIBNCURSES_FOUND)
     message (STATUS "Found libncurses ${LIBNCURSES_VERSION}")
-else (LIBNCURSES_FOUND)
-    message (FATAL_ERROR "libncurses required but not found")
-endif (LIBNCURSES_FOUND)
+else ()
+    pkg_check_modules (LIBNCURSES REQUIRED ncursesw)
+    if (LIBNCURSES_FOUND)
+        message (STATUS "Found libncursesw ${LIBNCURSES_VERSION}")
+    else()
+        message (FATAL_ERROR "libncurses required but not found")
+    endif ()
+endif ()
 
 find_path(Readline_ROOT_DIR
     NAMES include/readline/readline.h
@@ -324,6 +331,7 @@ add_definitions (-DYOSHIMI="yoshimi")
 add_definitions (-DCOMMAND_SIZE=80)
 add_definitions (-DMAX_HISTORY=25)
 add_definitions (-DMAX_PRESETS=1000)
+add_definitions (-DMAX_PRESET_DIRS=128)
 add_definitions (-DMAX_BANK_ROOT_DIRS=128)
 add_definitions (-DMAX_BANKS_IN_ROOT=128)
 add_definitions (-DMAX_AD_HARMONICS=128)
@@ -352,6 +360,7 @@ add_definitions (-DXML_STATE=5)
 add_definitions (-DXML_CONFIG=6)
 add_definitions (-DXML_BANK=7)
 add_definitions (-DXML_HISTORY=8)
+add_definitions (-DXML_VECTOR=9)
 
 # these were previously (pointlessly) user configurable
 add_definitions (-DNUM_VOICES=8)
@@ -455,7 +464,7 @@ target_link_libraries (yoshimi ${ExternLibraries})
 
 install (TARGETS yoshimi RUNTIME DESTINATION bin)
 
-install (DIRECTORY ../banks DESTINATION share/yoshimi
+install (DIRECTORY ../banks DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/yoshimi
     FILE_PERMISSIONS
         OWNER_READ OWNER_WRITE
         GROUP_READ GROUP_WRITE
@@ -466,7 +475,7 @@ install (DIRECTORY ../banks DESTINATION share/yoshimi
         WORLD_READ WORLD_EXECUTE
 )
 
-install (DIRECTORY ../examples DESTINATION share/yoshimi
+install (DIRECTORY ../examples DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/yoshimi
     FILE_PERMISSIONS
         OWNER_READ OWNER_WRITE
         GROUP_READ GROUP_WRITE
@@ -477,7 +486,7 @@ install (DIRECTORY ../examples DESTINATION share/yoshimi
         WORLD_READ WORLD_EXECUTE
 )
 
-install (DIRECTORY ../presets DESTINATION share/yoshimi
+install (DIRECTORY ../presets DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/yoshimi
     FILE_PERMISSIONS
         OWNER_READ OWNER_WRITE
         GROUP_READ GROUP_WRITE
@@ -488,7 +497,7 @@ install (DIRECTORY ../presets DESTINATION share/yoshimi
         WORLD_READ WORLD_EXECUTE
 )
 
-install (DIRECTORY ../doc/ DESTINATION share/doc/yoshimi
+install (DIRECTORY ../doc/ DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/doc/yoshimi
     FILE_PERMISSIONS
         OWNER_READ OWNER_WRITE
         GROUP_READ GROUP_WRITE
@@ -500,17 +509,17 @@ install (DIRECTORY ../doc/ DESTINATION share/doc/yoshimi
 )
 
 install (FILES ${CMAKE_CURRENT_BINARY_DIR}/yoshimi.desktop
-    DESTINATION share/applications)
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications)
 install (FILES ${CMAKE_CURRENT_SOURCE_DIR}/../desktop/yoshimi.png
-    DESTINATION share/pixmaps)
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/pixmaps)
 install (FILES ${CMAKE_CURRENT_SOURCE_DIR}/../desktop/yoshimi.svg
-    DESTINATION share/icons)
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps)
 install (FILES ${CMAKE_CURRENT_SOURCE_DIR}/../desktop/yoshimi_alt.svg
-    DESTINATION share/icons)
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps)
 install (FILES ${CMAKE_CURRENT_SOURCE_DIR}/../desktop/yoshimi.appdata.xml
-    DESTINATION share/appdata)
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/appdata)
 install (FILES ${CMAKE_CURRENT_SOURCE_DIR}/../desktop/yoshimi.1
-    DESTINATION share/man/man1)
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/man/man1)
 
 set_directory_properties (PROPERTIES
     ADDITIONAL_MAKE_CLEAN_FILES "${FltkUI_headers}"
@@ -539,19 +548,19 @@ add_custom_target (distclean
 
 
 if (BuildLV2Plugin)
+    if (EXISTS $ENV{LV2_PATH})
+        set(LV2_INSTALL_DIR $ENV{LV2_PATH} CACHE PATH
+        "Specifies where the LV2 libraries should be installed")
+    else()
+        set(LV2_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}/lv2 CACHE PATH
+        "Specifies where the LV2 libraries should be installed")
+    endif()
 
-include(GNUInstallDirs)
-
-if (EXISTS "/etc/debian_version")
-    set(LV2_INSTALL_DIR lib/lv2 CACHE PATH "Specifies where the LV2 libraries should be installed")
-else (EXISTS "/etc/debian_version")
-    set(LV2_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}/lv2 CACHE PATH "Specifies where the LV2 libraries should be installed")
-endif (EXISTS "/etc/debian_version")
-pkg_check_modules(LV2 REQUIRED lv2>=1.0.0)
-if (LV2_FOUND)
-    message (STATUS "Found lv2 package ${LV2_VERSION}")
-else (LV2_FOUND)
-    message (FATAL_ERROR "lv2 package required but not found (version 1.0.0 needed)")
-endif (LV2_FOUND)
-add_subdirectory(LV2_Plugin)
+    pkg_check_modules(LV2 REQUIRED lv2>=1.0.0)
+    if (LV2_FOUND)
+        message (STATUS "Found lv2 package ${LV2_VERSION}")
+    else (LV2_FOUND)
+        message (FATAL_ERROR "lv2 package required but not found (version 1.0.0 needed)")
+    endif (LV2_FOUND)
+    add_subdirectory(LV2_Plugin)
 endif (BuildLV2Plugin)
