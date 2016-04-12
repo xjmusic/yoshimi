@@ -131,12 +131,12 @@ static void *mainGuiThread(void *arg)
 #else
     Fl_PNG_Image pix("yoshimi_logo_png", yoshimi_logo_png, sizeof(yoshimi_logo_png));
 #endif
-    
+
     const int splashWidth = 411;
     const int splashHeight = 311;
     const int textHeight = 20;
     const int textBorder = 15;
-    
+
     Fl_Window winSplash(splashWidth, splashHeight, "yoshimi splash screen");
     Fl_Box box(0, 0, splashWidth,splashHeight);
     //Fl_Pixmap pix(yoshimi_logo);
@@ -148,19 +148,19 @@ static void *mainGuiThread(void *arg)
     boxLb.labelsize(textHeight);
     boxLb.labeltype(FL_NORMAL_LABEL);
     boxLb.labelfont(FL_HELVETICA | FL_ITALIC);
-    boxLb.label("Yoshimi is starting up");
+    string startup = YOSHIMI_VERSION;
+    startup = "Yoshimi " + startup + " is starting";
+    boxLb.label(startup.c_str());
 
-    winSplash.set_non_modal();
+    winSplash.set_modal();
     winSplash.clear_border();
     winSplash.border(false);
 
-    if (bShowGui)
+    if (bShowGui && firstRuntime->showSplash)
     {
-        //o->Rectangle::set(Fl_Monitor::find(0,0),o->w(),o->h(),fltk::ALIGN_CENTER);
         winSplash.position((Fl::w() - winSplash.w()) / 2, (Fl::h() - winSplash.h()) / 2);
         winSplash.show();
-        Fl::add_timeout(2.5, splashTimeout, &winSplash);
-
+        Fl::add_timeout(2, splashTimeout, &winSplash);
     }
 
     do
@@ -177,12 +177,12 @@ static void *mainGuiThread(void *arg)
         else
             usleep(33333);
     }
-    while (firstSynth == NULL);
+    while (firstSynth == NULL); // just wait
 
     GuiThreadMsg::sendMessage(firstSynth, GuiThreadMsg::NewSynthEngine, 0);
 
     while (firstSynth->getRuntime().runSynth)
-    {        
+    {
         if (firstSynth->getUniqueId() == 0)
         {
             firstSynth->getRuntime().signalCheck();
@@ -291,7 +291,7 @@ bool mainCreateNewInstance(unsigned int forceId)
     if (synth->getRuntime().showGui)
     {
         synth->setWindowTitle(musicClient->midiClientName());
-        if(firstSynth != NULL) //FLTK is not ready yet - send this messege leter for first synth
+        if(firstSynth != NULL) //FLTK is not ready yet - send this message later for first synth
         {
             GuiThreadMsg::sendMessage(synth, GuiThreadMsg::NewSynthEngine, 0);
         }
@@ -318,8 +318,13 @@ bool mainCreateNewInstance(unsigned int forceId)
     if (synth->getUniqueId() == 0)
         cout << "\nYay! We're up and running :-)\n";
     else
+    {
         cout << "\nStarted "<< synth->getUniqueId() << "\n";
-    synthInstances.insert(std::make_pair<SynthEngine *, MusicClient *>(synth, musicClient));
+        // following copied here for other instances
+        synth->loadHistory(synth->getUniqueId());
+        synth->installBanks(synth->getUniqueId());
+    }
+    synthInstances.insert(std::make_pair(synth, musicClient));
     //register jack ports for enabled parts
     for (int npart = 0; npart < NUM_MIDI_PARTS; ++npart)
     {
@@ -328,10 +333,6 @@ bool mainCreateNewInstance(unsigned int forceId)
             mainRegisterAudioPort(synth, npart);
         }
     }
-    
-    synth->installBanks(synth->getUniqueId());
-    synth->loadHistory(synth->getUniqueId());
-    
     return true;
 
 bail_out:
@@ -363,11 +364,11 @@ int main(int argc, char *argv[])
 
     struct termios  oldTerm;
     tcgetattr(0, &oldTerm);
-    
-    cout << "Yoshimi is starting" << endl; // guaranteed start message
+
+    cout << "Yoshimi " << YOSHIMI_VERSION << " is starting" << endl; // guaranteed start message
     globalArgc = argc;
     globalArgv = argv;
-    bool bExitSuccess = false;    
+    bool bExitSuccess = false;
     map<SynthEngine *, MusicClient *>::iterator it;
     bool guiStarted = false;
     pthread_t thr;
@@ -405,7 +406,7 @@ int main(int argc, char *argv[])
     }
 
     if (!guiStarted)
-    {        
+    {
         cout << "Yoshimi can't start main gui loop!" << endl;
         goto bail_out;
     }
@@ -455,11 +456,14 @@ int main(int argc, char *argv[])
         firstSynth->getRuntime().Log("Setting SIGTERM handler failed");
     if (sigaction(SIGQUIT, &yoshimiSigAction, NULL))
         firstSynth->getRuntime().Log("Setting SIGQUIT handler failed");
+    // following moved here for faster first synth startup
+    firstSynth->loadHistory(0);
+    firstSynth->installBanks(0);
+    GuiThreadMsg::sendMessage(firstSynth, GuiThreadMsg::RefreshCurBank, 1);
 
-    splashMessages.push_back("Startup complete!");
+    //splashMessages.push_back("Startup complete!");
 
     //create command line processing thread
-
     pthread_t cmdThr;
     if(bShowCmdLine)
     {

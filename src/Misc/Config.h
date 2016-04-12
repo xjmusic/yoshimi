@@ -92,6 +92,7 @@ class Config : public MiscFuncs
         string        instrumentLoad;
         string        rootDefine;
         bool          restoreState;
+        bool          stateChanged;
         string        StateFile;
         string        CurrentXMZ;
         bool          restoreJackSession;
@@ -103,6 +104,7 @@ class Config : public MiscFuncs
 
         bool          runSynth;
         bool          showGui;
+        bool          showSplash;
         bool          showCLI;
         int           VirKeybLayout;
 
@@ -122,7 +124,7 @@ class Config : public MiscFuncs
         string        nameTag;
 
         unsigned int  GzipCompression;
-        int           Interpolation;        
+        int           Interpolation;
         string        presetsDirlist[MAX_PRESETS];
         int           checksynthengines;
         bool          SimpleCheck;
@@ -137,6 +139,7 @@ class Config : public MiscFuncs
         int           midi_bank_C;
         int           midi_upper_voice_C;
         int           enable_part_on_voice_load;
+        bool          ignoreResetCCs;
         bool          monitorCCin;
         int           single_row_panel;
         int           NumAvailableParts;
@@ -162,9 +165,9 @@ class Config : public MiscFuncs
             int Controller;
             bool vectorEnabled[NUM_MIDI_CHANNELS];
         };
-        
-        IOdata nrpndata;        
-        
+
+        IOdata nrpndata;
+
         deque<HistoryListItem> ParamsHistory;
         deque<HistoryListItem> ScaleHistory;
         deque<HistoryListItem> StateHistory;
@@ -178,6 +181,7 @@ class Config : public MiscFuncs
     private:
         void loadCmdArgs(int argc, char **argv);
         bool loadConfig(void);
+        void defaultPresets(void);
         bool extractConfigData(XMLwrapper *xml);
         bool extractRuntimeData(XMLwrapper *xml);
         void addConfigXML(XMLwrapper *xml);
@@ -201,6 +205,7 @@ class Config : public MiscFuncs
 
         friend class YoshimiLV2Plugin;
 };
+
 
 //struct GuiThreadMsg must be allocated by caller via `new` and is freed by receiver via `delete`
 class GuiThreadMsg

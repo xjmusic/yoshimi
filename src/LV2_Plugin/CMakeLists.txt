@@ -46,12 +46,10 @@ file (GLOB yoshimi_params_files
     ../Params/FilterParams.cpp  ../Params/LFOParams.cpp
     ../Params/SUBnoteParameters.cpp  ../Params/PADnoteParameters.cpp
     ../Params/Controller.cpp  ../Params/Presets.cpp ../Params/PresetsStore.cpp
-    ../Params/ControlInterface.cpp
     ../Params/ADnoteParameters.h  ../Params/EnvelopeParams.h
     ../Params/FilterParams.h  ../Params/LFOParams.h
     ../Params/SUBnoteParameters.h  ../Params/PADnoteParameters.h
-    ../Params/Controller.h  ../Params/Presets.h ../Params/PresetsStore.h
-    ../Params/ControlInterface.h)
+    ../Params/Controller.h  ../Params/Presets.h ../Params/PresetsStore.h)
 file (GLOB yoshimi_synth_files
     ../Synth/ADnote.cpp  ../Synth/Envelope.cpp  ../Synth/LFO.cpp  ../Synth/OscilGen.cpp
     ../Synth/SUBnote.cpp  ../Synth/Resonance.cpp  ../Synth/PADnote.cpp
@@ -135,9 +133,9 @@ target_link_libraries(yoshimi_lv2
 
 add_dependencies(yoshimi_lv2 yoshimi_lv2_ttl)
 
-install (TARGETS yoshimi_lv2 DESTINATION ${CMAKE_INSTALL_PREFIX}/${LV2_INSTALL_DIR}/yoshimi.lv2)
+install (TARGETS yoshimi_lv2 DESTINATION ${LV2_INSTALL_DIR}/yoshimi.lv2)
 install (FILES ${yoshimi_manifest_ttl} ${yoshimi_plugin_ttl}
-  DESTINATION ${CMAKE_INSTALL_PREFIX}/${LV2_INSTALL_DIR}/yoshimi.lv2
+  DESTINATION ${LV2_INSTALL_DIR}/yoshimi.lv2
 )
 
 set_directory_properties(PROPERTY ADDITIONAL_MAKE_CLEAN_FILES "${FltkUI_headers}")

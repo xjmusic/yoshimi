@@ -5,7 +5,7 @@
     Copyright (C) 2002-2005 Nasca Octavian Paul
     Copyright 2009-2011, Alan Calvert
     Copyright 2013, Nikita Zlobin
-    Copyright 2014-2015, Will Godfrey & others
+    Copyright 2014-2016, Will Godfrey & others
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -94,12 +94,14 @@ static struct argp_option cmd_options[] = {
 
 Config::Config(SynthEngine *_synth, int argc, char **argv) :
     restoreState(false),
+    stateChanged(false),
     restoreJackSession(false),
     Samplerate(48000),
     Buffersize(256),
     Oscilsize(512),
     runSynth(true),
     showGui(true),
+    showSplash(true),
     showCLI(true),
     VirKeybLayout(1),
     audioEngine(DEFAULT_AUDIO),
@@ -126,6 +128,7 @@ Config::Config(SynthEngine *_synth, int argc, char **argv) :
     midi_bank_C(32),
     midi_upper_voice_C(128),
     enable_part_on_voice_load(1),
+    ignoreResetCCs(false),
     monitorCCin(false),
     single_row_panel(1),
     NumAvailableParts(NUM_MIDI_CHANNELS),
@@ -137,8 +140,8 @@ Config::Config(SynthEngine *_synth, int argc, char **argv) :
     deadObjects(NULL),
     nextHistoryIndex(numeric_limits<unsigned int>::max()),
     sigIntActive(0),
-    ladi1IntActive(0),    
-    sse_level(0),    
+    ladi1IntActive(0),
+    sse_level(0),
     programcommand(string("yoshimi")),
     synth(_synth),
     bRuntimeSetupCompleted(false)
@@ -166,14 +169,23 @@ bool Config::Setup(int argc, char **argv)
         return false;
 
     if(synth->getIsLV2Plugin()) //skip further setup for lv2 plugin instance.
+    {
+        /*
+         * These are needed here now, as for stand-alone they have
+         * been moved to main to give the users the impression of
+         * a faster startup, and reduce the likelyhood of thinking
+         * they failed and trying to start again.
+         */
+        synth->installBanks(synth->getUniqueId());
+        synth->loadHistory(synth->getUniqueId());
         return true;
+    }
     switch (audioEngine)
     {
         case alsa_audio:
-        {
             audioDevice = string(alsaAudioDevice);
             break;
-        }
+
         case jack_audio:
             audioDevice = string(jackServer);
             break;
@@ -189,9 +201,11 @@ bool Config::Setup(int argc, char **argv)
         case jack_midi:
             midiDevice = string(jackMidiDevice);
             break;
+
         case alsa_midi:
             midiDevice = string(alsaMidiDevice);
             break;
+
         case no_midi:
         default:
             midiDevice.clear();
@@ -200,6 +214,10 @@ bool Config::Setup(int argc, char **argv)
     if (!midiDevice.size())
         midiDevice = "";
     loadCmdArgs(argc, argv);
+    Oscilsize = nearestPowerOf2(Oscilsize, MAX_AD_HARMONICS * 2, 16384);
+    Buffersize = nearestPowerOf2(Buffersize, 16, 1024);
+    //Log(asString(Oscilsize));
+    //Log(asString(Buffersize));
     if (restoreState)
     {
         char * fp;
@@ -222,15 +240,15 @@ bool Config::Setup(int argc, char **argv)
          * There is a single state file that contains both startup config
          * data that must be set early, and runtime data that must be set
          * after synth has been initialised.
-         * 
+         *
          * Currently we open it here and fetch just the startup data, then
          * reopen it in synth and fetch all the data (including the startup
          * again).
-         * 
+         *
          * This is further complicated because the same functions are
          * being used by jack session.
          */
-    }    
+    }
     return true;
 }
 
@@ -310,33 +328,43 @@ string Config::testCCvalue(int cc)
         case 1:
             result = "mod wheel";
             break;
+
         case 10:
             result = "panning";
             break;
+
         case 11:
             result = "expression";
             break;
+
         case 38:
             result = "data lsb";
             break;
+
         case 71:
             result = "filter Q";
             break;
+
         case 74:
             result = "filter cutoff";
             break;
+
         case 75:
             result = "bandwidth";
             break;
+
         case 76:
             result = "FM amplitude";
             break;
+
         case 77:
             result = "resonance centre";
             break;
+
         case 78:
             result = "resonance bandwidth";
             break;
+
         default:
             result = masterCCtest(cc);
     }
@@ -352,39 +380,51 @@ string Config::masterCCtest(int cc)
          case 6:
             result = "data msb";
             break;
+
         case 7:
             result = "volume";
             break;
+
         case 38:
             result = "data lsb";
             break;
+
         case 64:
             result = "sustain pedal";
             break;
+
         case 65:
             result = "portamento";
             break;
+
         case 96:
             result = "data increment";
             break;
+
         case 97:
             result = "data decrement";
             break;
+
         case 98:
             result = "NRPN lsb";
             break;
+
         case 99:
             result = "NRPN msb";
             break;
+
         case 120:
             result = "all sounds off";
             break;
+
         case 121:
             result = "reset all controllers";
             break;
+
         case 123:
             result = "all notes off";
             break;
+
         default:
         {
             if (cc < 128) // don't compare with 'disabled' state
@@ -404,7 +444,7 @@ string Config::masterCCtest(int cc)
 
 void Config::clearPresetsDirlist(void)
 {
-    for (int i = 0; i < MAX_PRESETS; ++i)
+    for (int i = 0; i < MAX_PRESET_DIRS; ++i)
         presetsDirlist[i].clear();
 }
 
@@ -428,7 +468,7 @@ bool Config::loadConfig(void)
     }
     string yoshimi = "/"; // for some reason it doesn't
     yoshimi += YOSHIMI; // like these as one line here
-    
+
     if (synth->getUniqueId() > 0)
         yoshimi += ("-" + asString(synth->getUniqueId()));
     string presetDir = ConfigDir + "/presets";
@@ -446,6 +486,7 @@ bool Config::loadConfig(void)
     if (!isRegFile(resConfigFile) && !isRegFile(ConfigFile))
     {
         Log("ConfigFile " + resConfigFile + " not found, will use default settings");
+        defaultPresets();
         configChanged = true; // give the user the choice
     }
     else
@@ -456,7 +497,7 @@ bool Config::loadConfig(void)
         else
         {
             if (!xml->loadXMLfile(resConfigFile))
-            {                
+            {
                 if((synth->getUniqueId() > 0) && (!xml->loadXMLfile(ConfigFile)))
                 {
                     Log("loadConfig loadXMLfile failed");
@@ -470,6 +511,30 @@ bool Config::loadConfig(void)
         }
     }
     return isok;
+}
+
+
+void Config::defaultPresets(void)
+{
+    string presetdirs[]  = {
+        "/usr/share/yoshimi/presets",
+        "/usr/local/share/yoshimi/presets",
+        "/usr/share/zynaddsubfx/presets",
+        "/usr/local/share/zynaddsubfx/presets",
+        string(getenv("HOME")) + "/.config/yoshimi/presets",
+        localPath("/presets"),
+        "end"
+    };
+    int i = 0;
+    while (presetdirs[i] != "end")
+    {
+        if (isDirectory(presetdirs[i]))
+        {
+            Log(presetdirs[i], 2);
+            presetsDirlist[i] = presetdirs[i];
+        }
+        ++ i;
+    }
 }
 
 
@@ -487,8 +552,9 @@ bool Config::extractConfigData(XMLwrapper *xml)
     }
     GzipCompression = xml->getpar("gzip_compression", GzipCompression, 0, 9);
     showGui = xml->getpar("enable_gui", showGui, 0, 1);
+    showSplash = xml->getpar("enable_splash", showSplash, 0, 1);
     showCLI = xml->getpar("enable_CLI", showCLI, 0, 1);
-    single_row_panel = xml->getpar("single_row_panel", single_row_panel, 0, 1);    
+    single_row_panel = xml->getpar("single_row_panel", single_row_panel, 0, 1);
     toConsole = xml->getpar("reports_destination", toConsole, 0, 1);
     hideErrors = xml->getpar("hide_system_errors", hideErrors, 0, 1);
     logXMLheaders = xml->getpar("report_XMLheaders", logXMLheaders, 0, 1);
@@ -496,42 +562,32 @@ bool Config::extractConfigData(XMLwrapper *xml)
 
     Samplerate = xml->getpar("sample_rate", Samplerate, 44100, 192000);
     Buffersize = xml->getpar("sound_buffer_size", Buffersize, 16, 1024);
-    Oscilsize = xml->getpar("oscil_size", Oscilsize, MAX_AD_HARMONICS * 2, 131072);
+    Oscilsize = xml->getpar("oscil_size", Oscilsize, MAX_AD_HARMONICS * 2, 16384);
 
     // get preset dirs
     int count = 0;
-    for (int i = 0; i < MAX_PRESETS; ++i)
+    bool found = false;
+    for (int i = 0; i < MAX_PRESET_DIRS; ++i)
     {
         if (xml->enterbranch("PRESETSROOT", i))
         {
             string dir = xml->getparstr("presets_root");
             if (isDirectory(dir))
+            {
                 presetsDirlist[count++] = dir;
+                found = true;
+            }
             xml->exitbranch();
         }
     }
-    if (!count)
+    if (!found)
     {
-        string presetdirs[]  = {
-            "/usr/share/yoshimi/presets",
-            "/usr/local/share/yoshimi/presets",
-            "/usr/share/zynaddsubfx/presets",
-            "/usr/local/share/zynaddsubfx/presets",
-            string(getenv("HOME")) + "/.config/yoshimi/presets",
-            localPath("/presets"),
-            "end"
-        };
-        int i = 0;
-        while (presetdirs[i] != "end")
-        {
-            if (isDirectory(presetdirs[i]))
-                presetsDirlist[count++] = presetdirs[i];
-            ++ i;
-        }
+        defaultPresets();
+        configChanged = true; // give the user the choice
     }
-    
+
     Interpolation = xml->getpar("interpolation", Interpolation, 0, 1);
-    
+
     // engines
     audioEngine = (audio_drivers)xml->getpar("audio_engine", audioEngine, no_audio, alsa_audio);
     midiEngine = (midi_drivers)xml->getpar("midi_engine", midiEngine, no_midi, alsa_midi);
@@ -550,10 +606,11 @@ bool Config::extractConfigData(XMLwrapper *xml)
     midi_upper_voice_C = xml->getpar("midi_upper_voice_C", midi_upper_voice_C, 0, 128);
     EnableProgChange = 1 - xml->getpar("ignore_program_change", EnableProgChange, 0, 1); // inverted for Zyn compatibility
     enable_part_on_voice_load = xml->getpar("enable_part_on_voice_load", enable_part_on_voice_load, 0, 1);
-    
+    ignoreResetCCs = xml->getpar("ignore_reset_all_CCs",ignoreResetCCs,0, 1);
+
     //misc
     checksynthengines = xml->getpar("check_pad_synth", checksynthengines, 0, 1);
-    
+
     xml->exitbranch(); // CONFIGURATION
     return true;
 }
@@ -589,6 +646,7 @@ void Config::addConfigXML(XMLwrapper *xmltree)
     xmltree->beginbranch("CONFIGURATION");
     xmltree->addpar("gzip_compression", GzipCompression);
     xmltree->addpar("enable_gui", synth->getRuntime().showGui);
+    xmltree->addpar("enable_splash", synth->getRuntime().showSplash);
     xmltree->addpar("enable_CLI", synth->getRuntime().showCLI);
     xmltree->addpar("single_row_panel", single_row_panel);
     xmltree->addpar("reports_destination", toConsole);
@@ -600,7 +658,7 @@ void Config::addConfigXML(XMLwrapper *xmltree)
     xmltree->addpar("sound_buffer_size", Buffersize);
     xmltree->addpar("oscil_size", Oscilsize);
 
-    for (int i = 0; i < MAX_PRESETS; ++i)
+    for (int i = 0; i < MAX_PRESET_DIRS; ++i)
         if (presetsDirlist[i].size())
         {
             xmltree->beginbranch("PRESETSROOT",i);
@@ -609,13 +667,13 @@ void Config::addConfigXML(XMLwrapper *xmltree)
         }
 
     xmltree->addpar("interpolation", Interpolation);
-    
+
     xmltree->addpar("audio_engine", synth->getRuntime().audioEngine);
     xmltree->addpar("midi_engine", synth->getRuntime().midiEngine);
-    
+
     xmltree->addparstr("linux_alsa_audio_dev", alsaAudioDevice);
     xmltree->addparstr("linux_alsa_midi_dev", alsaMidiDevice);
-    
+
     xmltree->addparstr("linux_jack_server", jackServer);
     xmltree->addparstr("linux_jack_midi_dev", jackMidiDevice);
 
@@ -624,6 +682,7 @@ void Config::addConfigXML(XMLwrapper *xmltree)
     xmltree->addpar("midi_upper_voice_C", midi_upper_voice_C);
     xmltree->addpar("ignore_program_change", (1 - EnableProgChange));
     xmltree->addpar("enable_part_on_voice_load", enable_part_on_voice_load);
+    xmltree->addpar("ignore_reset_all_CCs",ignoreResetCCs);
     xmltree->addpar("check_pad_synth", checksynthengines);
     xmltree->endbranch(); // CONFIGURATION
 }
@@ -719,47 +778,52 @@ void Config::Log(string msg, char tostderr)
         cerr << msg << endl;
 }
 
+
 #ifndef YOSHIMI_LV2_PLUGIN
 void Config::StartupReport(MusicClient *musicClient)
 {
     Log(string(argp_program_version));
     Log("Clientname: " + musicClient->midiClientName());
-    string report = "Config: Audio: ";
+    string report = "Audio: ";
     switch (audioEngine)
     {
         case jack_audio:
             report += "jack";
             break;
+
         case alsa_audio:
             report += "alsa";
             break;
+
         default:
             report += "nada";
     }
     report += (" -> '" + audioDevice + "'");
-    Log(report);
+    Log(report, 2);
     report = "Midi: ";
     switch (midiEngine)
     {
         case jack_midi:
             report += "jack";
             break;
+
         case alsa_midi:
             report += "alsa";
             break;
+
         default:
             report += "nada";
     }
     if (!midiDevice.size())
         midiDevice = "default";
     report += (" -> '" + midiDevice + "'");
-    Log(report);
-    Log("Oscilsize: " + asString(synth->oscilsize));
-    Log("Samplerate: " + asString(synth->samplerate));
-    Log("Period size: " + asString(synth->buffersize));
+    Log(report, 2);
+    Log("Oscilsize: " + asString(synth->oscilsize), 2);
+    Log("Samplerate: " + asString(synth->samplerate), 2);
+    Log("Period size: " + asString(synth->buffersize), 2);
 }
-
 #endif
+
 
 void Config::setRtprio(int prio)
 {
@@ -866,12 +930,15 @@ void Config::signalCheck(void)
                 case JackSessionSave:
                     saveJackSession();
                     break;
+
                 case JackSessionSaveAndQuit:
                     saveJackSession();
                     runSynth = false;
                     break;
+
                 case JackSessionSaveTemplate: // not implemented
                     break;
+
                 default:
                     break;
             }
@@ -987,6 +1054,7 @@ void Config::AntiDenormals(bool set_daz_ftz)
     #endif
 }
 
+
 /**
 SSEcapability() and AntiDenormals() draw gratefully on the work of others,
 including:
@@ -1027,8 +1095,11 @@ static error_t parse_cmds (int key, char *arg, struct argp_state *state)
     switch (key)
     {
         case 'N': settings->nameTag = string(arg); break;
+
         case 'l': settings->paramsLoad = string(arg); break;
+
         case 'L': settings->instrumentLoad = string(arg); break;
+
         case 'A':
             settings->configChanged = true;
             settings->audioEngine = alsa_audio;
@@ -1037,6 +1108,7 @@ static error_t parse_cmds (int key, char *arg, struct argp_state *state)
             else
                 settings->audioDevice = settings->alsaAudioDevice;
             break;
+
         case 'a':
             settings->configChanged = true;
             settings->midiEngine = alsa_midi;
@@ -1045,51 +1117,44 @@ static error_t parse_cmds (int key, char *arg, struct argp_state *state)
             else
                 settings->midiDevice = string(settings->alsaMidiDevice);
             break;
-        case 'b': // messy but I can't think of a better way :(
+
+        case 'b':
             settings->configChanged = true;
-            num = Config::string2int(string(arg));
-            if (num >= 1024)
-                num = 1024;
-            else if (num >= 512)
-                num = 512;
-            else if (num >= 256)
-                num = 256;
-            else if (num >= 128)
-                num = 128;
-            else if (num >= 64)
-                num = 64;
-            else if (num >= 32)
-                num = 32;
-            else
-                num = 16;
-            settings->Buffersize = num;
+            settings->Buffersize = Config::string2int(string(arg));
             break;
+
         case 'D':
             if (arg)
                 settings->rootDefine = string(arg);
             break;
+
         case 'c':
             settings->configChanged = true;
             settings->showCLI = false;
             break;
+
         case 'C':
             settings->configChanged = true;
             settings->showCLI = true;
             break;
+
         case 'i':
             settings->configChanged = true;
             settings->showGui = false;
             break;
+
         case 'I':
             settings->configChanged = true;
             settings->showGui = true;
             break;
+
         case 'J':
             settings->configChanged = true;
             settings->audioEngine = jack_audio;
             if (arg)
                 settings->audioDevice = string(arg);
             break;
+
         case 'j':
             settings->configChanged = true;
             settings->midiEngine = jack_midi;
@@ -1098,59 +1163,46 @@ static error_t parse_cmds (int key, char *arg, struct argp_state *state)
             else
                 settings->midiDevice = string(settings->jackMidiDevice);
             break;
+
         case 'k': settings->startJack = true; break;
+
         case 'K': settings->connectJackaudio = true; break;
+
         case 'o':
             settings->configChanged = true;
-            num = Config::string2int(string(arg));
-            if (num >= 16384)
-                num = 16384;
-            else if (num >= 8192)
-                num = 8192;
-            else if (num >= 4096)
-                num = 4096;
-            else if (num >= 2048)
-                num = 2048;
-            else if (num >= 1024)
-                num = 1024;
-            else if (num >= 512)
-                num = 512;
-            else if (num >= 256)
-                num = 256;
-            else num = 128;
-            settings->Oscilsize = num;
+            settings->Oscilsize = Config::string2int(string(arg));
             break;
+
         case 'R':
             settings->configChanged = true;
-            num = Config::string2int(string(arg));
-            if (num >= 192000)
-                num = 192000;
-            else if (num >= 96000)
-                num = 96000;
-            else if (num >= 48000)
-                num = 48000;
-            else
-                num = 44100;
+            num = (Config::string2int(string(arg)) / 48 ) * 48;
+            if (num < 48000 || num > 192000)
+                num = 44100; // play safe
             settings->Samplerate = num;
             break;
+
         case 'S':
             settings->restoreState = true;
             if (arg)
                 settings->StateFile = string(arg);
             break;
-        #if defined(JACK_SESSION)
-            case 'u':
-                if (arg)
-                    settings->jackSessionFile = string(arg);
-                break;
-            case 'U':
-                    if (arg)
-                        settings->jackSessionUuid = string(arg);
+
+#if defined(JACK_SESSION)
+        case 'u':
+            if (arg)
+                settings->jackSessionFile = string(arg);
             break;
-        #endif
+
+        case 'U':
+                if (arg)
+                    settings->jackSessionUuid = string(arg);
+        break;
+#endif
+
         case ARGP_KEY_ARG:
         case ARGP_KEY_END:
             break;
+
         default:
             return ARGP_ERR_UNKNOWN;
     }
@@ -1169,6 +1221,7 @@ void Config::loadCmdArgs(int argc, char **argv)
         restoreJackSession = true;
 }
 
+
 void GuiThreadMsg::processGuiMessages()
 {
     GuiThreadMsg *msg = (GuiThreadMsg *)Fl::thread_message();
@@ -1181,55 +1234,48 @@ void GuiThreadMsg::processGuiMessages()
             SynthEngine *synth = ((SynthEngine *)msg->data);
             MasterUI *guiMaster = synth->getGuiMaster();
             if(!guiMaster)
-            {
                 cerr << "Error starting Main UI!" << endl;
-            }
             else
-            {
                 guiMaster->Init(guiMaster->getSynth()->getWindowTitle().c_str());
-            }
-        }
             break;
+        }
+
         case GuiThreadMsg::UpdateMaster:
         {
             SynthEngine *synth = ((SynthEngine *)msg->data);
             MasterUI *guiMaster = synth->getGuiMaster(false);
             if(guiMaster)
-            {
                 guiMaster->refresh_master_ui();
-            }
-        }
             break;
+        }
+
         case GuiThreadMsg::UpdateConfig:
         {
             SynthEngine *synth = ((SynthEngine *)msg->data);
             MasterUI *guiMaster = synth->getGuiMaster(false);
             if(guiMaster)
-            {
                 guiMaster->configui->update_config(msg->index);
-            }
-        }
             break;
+        }
+
         case GuiThreadMsg::UpdatePaths:
         {
             SynthEngine *synth = ((SynthEngine *)msg->data);
             MasterUI *guiMaster = synth->getGuiMaster(false);
             if(guiMaster)
-            {
                 guiMaster->updatepaths(msg->index);
-            }
-        }
             break;
+        }
+
         case GuiThreadMsg::UpdatePanel:
         {
             SynthEngine *synth = ((SynthEngine *)msg->data);
             MasterUI *guiMaster = synth->getGuiMaster(false);
             if(guiMaster)
-            {
                 guiMaster->updatepanel();
-            }
-        }
             break;
+        }
+
         case GuiThreadMsg::UpdatePart:
         {
             SynthEngine *synth = ((SynthEngine *)msg->data);
@@ -1239,8 +1285,9 @@ void GuiThreadMsg::processGuiMessages()
                 guiMaster->updatepart();
                 guiMaster->updatepanel();
             }
-        }
             break;
+        }
+
         case GuiThreadMsg::UpdatePanelItem:
             if(msg->index < NUM_MIDI_PARTS && msg->data)
             {
@@ -1253,6 +1300,7 @@ void GuiThreadMsg::processGuiMessages()
                 }
             }
             break;
+
         case GuiThreadMsg::UpdatePartProgram:
             if(msg->index < NUM_MIDI_PARTS && msg->data)
             {
@@ -1265,17 +1313,17 @@ void GuiThreadMsg::processGuiMessages()
                 }
             }
             break;
+
         case GuiThreadMsg::UpdateEffects:
             if(msg->data)
             {
                 SynthEngine *synth = ((SynthEngine *)msg->data);
                 MasterUI *guiMaster = synth->getGuiMaster(false);
                 if(guiMaster)
-                {
                     guiMaster->updateeffects(msg->index);
-                }
             }
             break;
+
         case GuiThreadMsg::RegisterAudioPort:
             if(msg->data)
             {
@@ -1283,17 +1331,17 @@ void GuiThreadMsg::processGuiMessages()
                 mainRegisterAudioPort(synth, msg->index);
             }
             break;
+
         case GuiThreadMsg::UpdateBankRootDirs:
             if(msg->data)
             {
                 SynthEngine *synth = ((SynthEngine *)msg->data);
                 MasterUI *guiMaster = synth->getGuiMaster(false);
                 if(guiMaster)
-                {
                     guiMaster->updateBankRootDirs();
-                }
             }
             break;
+
         case GuiThreadMsg::RescanForBanks:
             if(msg->data)
             {
@@ -1305,6 +1353,7 @@ void GuiThreadMsg::processGuiMessages()
                 }
             }
             break;
+
         case GuiThreadMsg::RefreshCurBank:
             if(msg->data)
             {
@@ -1312,11 +1361,18 @@ void GuiThreadMsg::processGuiMessages()
                 MasterUI *guiMaster = synth->getGuiMaster(false);
                 if(guiMaster && guiMaster->bankui)
                 {
+                    if (msg->index == 1)
+                    {
+                        // special case for first synth statup
+                        guiMaster->bankui->readbankcfg();
+                        guiMaster->bankui->rescan_for_banks(false);
+                    }
                     guiMaster->bankui->set_bank_slot();
                     guiMaster->bankui->refreshmainwindow();
                 }
             }
             break;
+
         default:
             break;
         }
