@@ -719,11 +719,15 @@ int CmdInterface::commandVector()
 
     if (matchnMove(1, point, "features"))
     {
-        unsigned int vecfeat = Runtime.nrpndata.vectorXfeatures[chan];
+        unsigned int vecfeat;
         if (point[0] == 0)
             reply = value_msg;
         else
         {
+            if (axis == 0)
+                vecfeat = Runtime.nrpndata.vectorXfeatures[chan];
+            else
+                vecfeat = Runtime.nrpndata.vectorYfeatures[chan];
             tmp = string2int(point);
             if (tmp < 1 || tmp > 4)
                 return range_msg;
@@ -1593,12 +1597,17 @@ bool CmdInterface::cmdIfaceProcessCommand()
     {
         if(matchnMove(2, point, "vector"))
         {
-            tmp = chan;
             string loadChan;
             if(matchnMove(1, point, "channel"))
             {
-                tmp = string2int127(point);
-                point = skipChars(point);
+                if (isdigit(point[0]))
+                {
+                    tmp = string2int127(point);
+                    point = skipChars(point);
+                    chan = tmp;
+                }
+                else
+                    tmp = chan;
                 loadChan = "channel " + asString(chan);
             }
             else
@@ -1612,8 +1621,7 @@ bool CmdInterface::cmdIfaceProcessCommand()
                 reply = name_msg;
             else
             {
-                chan = tmp;
-                if(synth->loadVector(chan, (string) point, true))
+                if(synth->loadVector(tmp, (string) point, true))
                     Runtime.Log("Loaded Vector " + (string) point + " to " + loadChan);
                 reply = done_msg;
             }
