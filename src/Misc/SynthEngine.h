@@ -76,8 +76,10 @@ class SynthEngine : private SynthHelper, MiscFuncs
         int loadPatchSetAndUpdate(string filename);
         bool installBanks(int instance);
         bool saveBanks(int instance);
-        bool loadHistory(int instance);
-        bool saveHistory(int instance);
+        void addHistory(string name, int group);
+        vector<string> * getHistory(int group);
+        bool loadHistory(void);
+        bool saveHistory(void);
         bool loadVector(unsigned char baseChan, string name, bool full);
         bool saveVector(unsigned char baseChan, string name, bool full);
 
@@ -93,17 +95,23 @@ class SynthEngine : private SynthHelper, MiscFuncs
         void SetEffects(unsigned char category, unsigned char command, unsigned char nFX, unsigned char nType, int nPar, unsigned char value);
         void SetBankRoot(int rootnum);
         void SetBank(int banknum);
+        int ReadBankRoot(void);
+        int ReadBank(void);
         void SetProgram(unsigned char chan, unsigned short pgm);
         bool SetProgramToPart(int npart, int pgm, string fname);
         void SetPartChan(unsigned char npart, unsigned char nchan);
         void SetPartDestination(unsigned char npart, unsigned char dest);
         void SetPartPortamento(int npart, bool state);
+        bool ReadPartPortamento(int npart);
+        void SetPartKeyMode(int npart, int mode);
+        int  ReadPartKeyMode(int npart);
         void cliOutput(list<string>& msg_buf, unsigned int lines);
         void ListPaths(list<string>& msg_buf);
         void ListBanks(int rootNum, list<string>& msg_buf);
         void ListInstruments(int bankNum, list<string>& msg_buf);
         void ListCurrentParts(list<string>& msg_buf);
         void ListVectors(list<string>& msg_buf);
+        bool SingleVector(list<string>& msg_buf, int chan);
         void ListSettings(list<string>& msg_buf);
         void SetSystemValue(int type, int value);
         void writeRBP(char type, char data0, char data1);

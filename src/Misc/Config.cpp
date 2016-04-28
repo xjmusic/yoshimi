@@ -177,7 +177,7 @@ bool Config::Setup(int argc, char **argv)
          * they failed and trying to start again.
          */
         synth->installBanks(synth->getUniqueId());
-        synth->loadHistory(synth->getUniqueId());
+        synth->loadHistory();
         return true;
     }
     switch (audioEngine)
@@ -269,38 +269,6 @@ void Config::flushLog(void)
             LogList.pop_front();
         }
     }
-}
-
-
-string Config::addParamHistory(string file, string extension, deque<HistoryListItem> &ParamsHistory)
-{
-    if (!file.empty())
-    {
-        unsigned int name_start = file.rfind("/");
-        unsigned int name_end = file.rfind(extension);
-        if (name_start != string::npos && name_end != string::npos
-            && (name_start - 1) < name_end)
-        {
-            HistoryListItem item;
-            item.name = file.substr(name_start + 1, name_end - name_start - 1);
-            item.file = file;
-            item.index = nextHistoryIndex--;
-            itx = ParamsHistory.begin();
-            for (unsigned int i = 0; i < ParamsHistory.size(); ++i, ++itx)
-                if (ParamsHistory.at(i).sameFile(file))
-                    ParamsHistory.erase(itx);
-            ParamsHistory.insert(ParamsHistory.begin(), item);
-            if (ParamsHistory.size() > MAX_HISTORY)
-            {
-                itx = ParamsHistory.end();
-                ParamsHistory.erase(--itx);
-            }
-            return (CurrentXMZ = item.name);
-        }
-        else
-            Log("Invalid param file proffered to history:" + file);
-    }
-    return string();
 }
 
 
@@ -626,16 +594,12 @@ void Config::saveConfig(void)
         return;
     }
     addConfigXML(xmltree);
-    unsigned int tmp = GzipCompression;
-    GzipCompression = 0;
-
     string resConfigFile = ConfigFile;
 
     if (xmltree->saveXMLfile(resConfigFile))
         configChanged = false;
     else
         Log("Failed to save config to " + resConfigFile);
-    GzipCompression = tmp;
 
     delete xmltree;
 }

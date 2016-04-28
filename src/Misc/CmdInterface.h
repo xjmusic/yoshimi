@@ -41,13 +41,13 @@ class CmdInterface : private MiscFuncs
         bool query(string text, bool priority);
         void helpLoop(list<string>& msg, string *commands, int indent);
         bool helpList();
-        int historyList(int type);
+        void historyList(int listnum);
         int effectsList();
-        int effects(int level);
+        int effects();
         int volPanShift();
         int commandVector();
         int commandPart(bool justSet);
-        int commandSet();
+        int commandReadnSet();
         bool cmdIfaceProcessCommand();
         char *cCmd;
         char *point;
@@ -62,6 +62,7 @@ class CmdInterface : private MiscFuncs
         int axis;
         unsigned int level;
         string replyString;
+        bool isRead;
 };
 
 #endif

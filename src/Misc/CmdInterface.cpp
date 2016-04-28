@@ -80,7 +80,7 @@ string basics[] = {
     "REMove",                       "remove paths and files",
     "  Root <n>",                   "de-list root path ID",
     "  Bank <n>",                   "delete bank ID (and all contents) from current root",
-    "Set",                          "set all main parameters",
+    "Set / Read",                   "set or read all main parameters",
     "  REPorts [s]",                "destination (Gui/Stderr)",
     "  ",                           "  non-fatal (SHow/Hide)",
     "  Root <n>",                   "current root path to ID",
@@ -142,7 +142,7 @@ string partlist [] = {
     "- Send <n3> <n4>",         "send part to system effect n3 at volume n4",
     "PRogram <n2>",             "loads instrument ID",
     "NAme <s>",                 "sets the display name the part can be saved with",
-    "Channel <n2>",             "MIDI channel (> 15 disables)",
+    "Channel <n2>",             "MIDI channel (> 31 disables, > 15 note off only)",
     "Destination <s2>",         "jack audio destination (Main, Part, Both)",
     "end"
 };
@@ -197,6 +197,7 @@ void CmdInterface::defaults()
     nFX = 0;
     nFXtype = 0;
     nFXpreset = 0;
+    isRead = false;
 }
 
 
@@ -284,60 +285,49 @@ bool CmdInterface::helpList()
 }
 
 
-int CmdInterface::historyList(int type)
+void CmdInterface::historyList(int listnum)
 {
-    Config &Runtime = synth->getRuntime();
     list<string>msg;
-    bool anyfound = false;
+    int start = 2;
+    int end = 4;
+    bool found = false;
 
-    if ((type & 1) && Runtime.ParamsHistory.size())
+    if (listnum != 0)
     {
-        msg.push_back(" ");
-        msg.push_back("Recent Patch Sets:");
-        anyfound = true;
-        deque<HistoryListItem>::reverse_iterator rx = Runtime.ParamsHistory.rbegin();
-        while (rx != Runtime.ParamsHistory.rend())
+        start = listnum;
+        end = listnum;
+    }
+    for (int type = start; type <= end; ++type)
+    {
+        vector<string> listType = *synth->getHistory(type);
+        if (listType.size() > 0)
         {
-            msg.push_back("  " + rx->file);
-            ++rx;
+            msg.push_back(" ");
+            switch (type)
+            {
+                case 2:
+                    msg.push_back("Recent Patch Sets:");
+                    break;
+                case 3:
+                    msg.push_back("Recent Scales:");
+                    break;
+                case 4:
+                    msg.push_back("Recent States:");
+                    break;
+            }
+            for (vector<string>::iterator it = listType.begin(); it != listType.end(); ++it)
+                msg.push_back("  " + *it);
+            found = true;
         }
     }
-
-    if ((type & 2) && Runtime.ScaleHistory.size())
-    {
-        msg.push_back(" ");
-        msg.push_back("Recent Scales:");
-        anyfound = true;
-        deque<HistoryListItem>::reverse_iterator rx = Runtime.ScaleHistory.rbegin();
-        while (rx != Runtime.ScaleHistory.rend())
-        {
-            msg.push_back("  " + rx->file);
-            ++rx;
-        }
-    }
-
-    if ((type & 4) && Runtime.StateHistory.size())
-    {
-        msg.push_back(" ");
-        msg.push_back("Recent States:");
-        anyfound = true;
-        deque<HistoryListItem>::reverse_iterator rx = Runtime.StateHistory.rbegin();
-        while (rx != Runtime.StateHistory.rend())
-        {
-            msg.push_back("  " + rx->file);
-            ++rx;
-        }
-    }
-
-    if (!anyfound)
+    if (!found)
         msg.push_back("\nNo Saved History");
 
     synth->cliOutput(msg, LINES);
-    return done_msg;
 }
 
 
-    int CmdInterface::effectsList()
+int CmdInterface::effectsList()
 {
     list<string>msg;
 
@@ -386,15 +376,15 @@ int CmdInterface::historyList(int type)
 }
 
 
-int CmdInterface::effects(int level)
+int CmdInterface::effects()
 {
     Config &Runtime = synth->getRuntime();
     int reply = done_msg;
     int nFXavail;
-
     int category;
     int par;
     int value;
+    unsigned int old_level = level;
 
     string dest = "";
     bool flag;
@@ -413,12 +403,27 @@ int CmdInterface::effects(int level)
     {
         nFXavail = NUM_SYS_EFX;
     }
-    if (nFX >= nFXavail)
-        nFX = nFXavail - 1; // we may have changed effects base
     if (point[0] == 0)
-        return done_msg;
+    {
+        if (bitTest(level, part_lev))
+        {
+            synth->SetEffects(2, 1, nFX, nFXtype, 0, 0);
+        }
+        else if (bitTest(level, ins_fx))
+        {
+            synth->SetEffects(1, 1, nFX, nFXtype, 0, 0);
+        }
+        else
+        {
+            synth->SetEffects(0, 1, nFX, nFXtype, 0, 0);
+        }
 
-    if (isdigit(point[0]))
+        if (isRead)
+            Runtime.Log("Current FX number is " + asString(nFX));
+        return done_msg;
+    }
+
+    if (!isRead && isdigit(point[0]))
     {
         value = string2int(point);
         point = skipChars(point);
@@ -426,9 +431,23 @@ int CmdInterface::effects(int level)
             return range_msg;
 
         if (value != nFX)
-        {
+        { // dummy 'SetEffects' calls to update GUI
             nFX = value;
-#warning  We need to reset the effect type here
+            if (bitTest(level, part_lev))
+            {
+                nFXtype = synth->part[npart]->partefx[nFX]->geteffect();
+                synth->SetEffects(0, 2, nFX, nFXtype, 0, 0);
+            }
+            else if (bitTest(level, ins_fx))
+            {
+                nFXtype = synth->insefx[nFX]->geteffect();
+                synth->SetEffects(0, 1, nFX, nFXtype, 0, 0);
+            }
+            else
+            {
+                nFXtype = synth->sysefx[nFX]->geteffect();
+                synth->SetEffects(0, 0, nFX, nFXtype, 0, 0);
+            }
         }
         if (point[0] == 0)
         {
@@ -439,6 +458,11 @@ int CmdInterface::effects(int level)
 
     if (matchnMove(1, point, "type"))
     {
+        if (isRead)
+        {
+            Runtime.Log("Current FX type is " + fx_list[nFXtype]);
+            return done_msg;
+        }
         flag = true;
         for (int i = 0; i < 9; ++ i)
         {
@@ -651,11 +675,26 @@ int CmdInterface::volPanShift()
 int CmdInterface::commandVector()
 {
     Config &Runtime = synth->getRuntime();
+    list<string> msg;
     int reply = todo_msg;
     int tmp;
 
-    if (point[0] == 0)
+    if (isRead)
+    {
+        if (synth->SingleVector(msg, chan))
+            synth->cliOutput(msg, LINES);
+        else
+            Runtime.Log("No vector on channel " + asString(chan));
         return done_msg;
+    }
+    if (point[0] == 0)
+    {
+        if (Runtime.nrpndata.vectorEnabled[chan])
+            bitSet(level, vect_lev);
+        else
+            Runtime.Log("No vector on channel " + asString(chan));
+        return done_msg;
+    }
 
     if (isdigit(point[0]))
     {
@@ -809,7 +848,7 @@ int CmdInterface::commandPart(bool justSet)
     if (point[0] == 0)
         return done_msg;
     if (bitTest(level, all_fx))
-        return effects(level);
+        return effects();
     if (justSet || isdigit(point[0]))
     {
         if (isdigit(point[0]))
@@ -838,7 +877,7 @@ int CmdInterface::commandPart(bool justSet)
     {
         level = 1; // clear out any higher levels
         bitSet(level, part_lev);
-        return effects(level);
+        return effects();
     }
     tmp = volPanShift();
     if(tmp != todo_msg)
@@ -859,6 +898,11 @@ int CmdInterface::commandPart(bool justSet)
     }
     else if (matchnMove(2, point, "program") || matchnMove(1, point, "instrument"))
     {
+        if (isRead)
+        {
+            Runtime.Log("Part name is " + synth->part[npart]->Pname);
+            return done_msg;
+        }
         if (point[0] != 0) // force part not channel number
         {
             synth->SetProgram(npart | 0x80, string2int(point));
@@ -869,14 +913,21 @@ int CmdInterface::commandPart(bool justSet)
     }
     else if (matchnMove(1, point, "channel"))
     {
-        if (point[0] != 0)
+        if (isRead || point[0] != 0)
         {
-            tmp = string2int127(point);
-            synth->SetPartChan(npart, tmp);
-            if (tmp < NUM_MIDI_CHANNELS)
-                Runtime.Log("Part " + asString(npart) + " set to channel " + asString(tmp));
+            if (isRead)
+                tmp = synth->part[npart]->Prcvchn;
             else
-                Runtime.Log("Part " + asString(npart) + " set to no MIDI");
+            {
+                tmp = string2int127(point);
+                synth->SetPartChan(npart, tmp);
+            }
+            string name = "";
+            if (tmp >= NUM_MIDI_CHANNELS * 2)
+                name = " (no MIDI)";
+            else if (tmp >= NUM_MIDI_CHANNELS)
+                name = " (" + asString (tmp % NUM_MIDI_CHANNELS) + " note off only)";
+            Runtime.Log("Part " + asString(npart) + " set to channel " + asString(tmp) + name, isRead);
             reply = done_msg;
         }
         else
@@ -884,6 +935,25 @@ int CmdInterface::commandPart(bool justSet)
     }
     else if (matchnMove(1, point, "destination"))
     {
+        if (isRead)
+        {
+            string name;
+            switch (synth->part[npart]->Paudiodest)
+            {
+                case 2:
+                    name = "part";
+                    break;
+                case 3:
+                    name = "both";
+                    break;
+                case 1:
+                default:
+                    name = "main";
+                    break;
+            }
+            Runtime.Log("Jack audio to " + name, 1);
+            return done_msg;
+        }
         int dest = 0;
 
         if (matchnMove(1, point, "main"))
@@ -903,6 +973,12 @@ int CmdInterface::commandPart(bool justSet)
     }
     else if (matchnMove(1, point, "note"))
     {
+        string name = "Note limit set to ";
+        if (isRead)
+        {
+            Runtime.Log(name + asString((int)synth->part[npart]->Pkeylimit), 1);
+            return done_msg;
+        }
         if (point[0] == 0)
             return value_msg;
         tmp = string2int(point);
@@ -911,13 +987,19 @@ int CmdInterface::commandPart(bool justSet)
         else
         {
             synth->part[npart]->setkeylimit(tmp);
-            Runtime.Log("Note limit set to " + asString(tmp));
+            Runtime.Log(name + asString(tmp));
             partFlag = true;
         }
         reply = done_msg;
     }
     else if (matchnMove(2, point, "min"))
     {
+        string name = "Min key set to ";
+        if (isRead)
+        {
+            Runtime.Log(name + asString((int)synth->part[npart]->Pminkey));
+            return done_msg;
+        }
         if (point[0] == 0)
             return value_msg;
         tmp = string2int127(point);
@@ -926,14 +1008,20 @@ int CmdInterface::commandPart(bool justSet)
         else
         {
             synth->part[npart]->Pminkey = tmp;
-            Runtime.Log("Min key set to " + asString(tmp));
+            Runtime.Log(name + asString(tmp));
             partFlag = true;
         }
         reply = done_msg;
     }
     else if (matchnMove(2, point, "max"))
     {
-        if (point[0] == 0)
+        string name = "Max key set to ";
+        if (isRead)
+        {
+            Runtime.Log(name + asString((int)synth->part[npart]->Pmaxkey), 1);
+            return done_msg;
+        }
+       if (point[0] == 0)
             return value_msg;
         tmp = string2int127(point);
         if (tmp < synth->part[npart]->Pminkey)
@@ -941,34 +1029,41 @@ int CmdInterface::commandPart(bool justSet)
         else
         {
             synth->part[npart]->Pmaxkey = tmp;
-            Runtime.Log("Max key set to " + asString(tmp));
+            Runtime.Log(name + asString(tmp));
             partFlag = true;
         }
         reply = done_msg;
     }
     else if (matchnMove(1, point, "mode"))
     {
+        if (isRead)
+        {
+            string name;
+            tmp = synth->ReadPartKeyMode(npart);
+            switch (tmp)
+            {
+                case 2:
+                    name = "'legato'";
+                    break;
+                case 1:
+                    name = "'mono'";
+                    break;
+                case 0:
+                default:
+                    name = "'poly'";
+                    break;
+            }
+            Runtime.Log("Key mode set to " + name, 1);
+            return done_msg;
+        }
         if (point[0] == 0)
             return value_msg;
         if (matchnMove(1, point, "poly"))
-        {
-             synth->part[npart]->Ppolymode = 1;
-             synth->part[npart]->Plegatomode = 0;
-             Runtime.Log("mode set to 'poly'");
-        }
-        else
-            if (matchnMove(1, point, "mono"))
-        {
-            synth->part[npart]->Ppolymode = 0;
-            synth->part[npart]->Plegatomode = 0;
-            Runtime.Log("mode set to 'mono'");
-        }
+             synth->SetPartKeyMode(npart, 0);
+        else if (matchnMove(1, point, "mono"))
+            synth->SetPartKeyMode(npart, 1);
         else if (matchnMove(1, point, "legato"))
-        {
-            synth->part[npart]->Ppolymode = 0;
-            synth->part[npart]->Plegatomode = 1;
-            Runtime.Log("mode set to 'legato'");
-        }
+            synth->SetPartKeyMode(npart, 2);
         else
             return value_msg;
         partFlag = true;
@@ -976,12 +1071,22 @@ int CmdInterface::commandPart(bool justSet)
     }
     else if (matchnMove(2, point, "portamento"))
     {
+        if (isRead)
+        {
+            string name = "Portamento ";
+            if (synth->ReadPartPortamento(npart))
+                name += "enabled";
+            else
+                name += "disabled";
+            Runtime.Log(name, 1);
+            return done_msg;
+        }
         if (point[0] == 0)
             return value_msg;
         if (matchnMove(1, point, "enable"))
         {
            synth->SetPartPortamento(npart, 1);
-           Runtime.Log("Portamento enabled");
+           Runtime.Log("Portamento enabled", isRead);
         }
         else
         {
@@ -993,9 +1098,24 @@ int CmdInterface::commandPart(bool justSet)
     }
     else if (matchnMove(2, point, "name"))
     {
-        synth->part[npart]->Pname = point;
+        string name = "Part name set to ";
+        if (isRead)
+        {
+            name += synth->part[npart]->Pname;
+        }
+        else
+        {
+            if (strlen(point) < 3)
+                name = "Name too short";
+            else
+            {
+                name += (string) point;
+                synth->part[npart]->Pname = point;
+                partFlag = true;
+            }
+        }
+        Runtime.Log(name);
         reply = done_msg;
-        partFlag = true;
     }
     else
         reply = opp_msg;
@@ -1005,7 +1125,7 @@ int CmdInterface::commandPart(bool justSet)
 }
 
 
-int CmdInterface::commandSet()
+int CmdInterface::commandReadnSet()
 {
     Config &Runtime = synth->getRuntime();
     int reply = todo_msg;
@@ -1014,6 +1134,11 @@ int CmdInterface::commandSet()
 
     if (matchnMove(4, point, "yoshimi"))
     {
+        if (isRead)
+        {
+            Runtime.Log("Instance " + asString(currentInstance), 1);
+            return done_msg;
+        }
         if (point[0] == 0)
             return value_msg;
         tmp = string2int(point);
@@ -1029,6 +1154,20 @@ int CmdInterface::commandSet()
 
     else if (matchnMove(3, point, "reports"))
     {
+        if (isRead)
+        {
+            if (Runtime.hideErrors)
+                name = "Non-fatal reports";
+            else
+                name = "All reports";
+            name += " sent to ";
+            if (Runtime.toConsole)
+                name += "console window";
+            else
+                name += "stderr";
+            Runtime.Log(name, 1);
+            return done_msg;
+        }
         if (matchnMove(1, point, "gui"))
             synth->SetSystemValue(100, 127);
         else if (matchnMove(1, point, "stderr"))
@@ -1055,6 +1194,11 @@ int CmdInterface::commandSet()
 
     else if (matchnMove(1, point, "root"))
     {
+        if (isRead)
+        {
+            Runtime.Log("Root is ID " + asString(synth->ReadBankRoot()), 1);
+            return done_msg;
+        }
         if (point[0] != 0)
         {
             synth->SetBankRoot(string2int(point));
@@ -1065,6 +1209,11 @@ int CmdInterface::commandSet()
     }
     else if (matchnMove(1, point, "bank"))
     {
+        if (isRead)
+        {
+            Runtime.Log("Bank is ID " + asString(synth->ReadBank()), 1);
+            return done_msg;
+        }
         if (point[0] != 0)
         {
             synth->SetBank(string2int(point));
@@ -1083,6 +1232,16 @@ int CmdInterface::commandSet()
 
     if (matchnMove(1, point, "part"))
     {
+        nFX = 0; // effects number limit changed
+        if (isRead && point[0] == 0)
+        {
+            if (synth->partonoffRead(npart))
+                name = " enabled";
+            else
+                name = " disabled";
+            Runtime.Log("Current part " + asString(npart) + name, 1);
+            return done_msg;
+        }
         level = 0; // clear all first
         bitSet(level, part_lev);
         nFXtype = synth->part[npart]->partefx[nFX]->geteffect();
@@ -1096,19 +1255,21 @@ int CmdInterface::commandSet()
     if (level < 4 && matchnMove(3, point, "system"))
     {
         level = 1;
+        nFX = 0; // effects number limit changed
         matchnMove(2, point, "effects"); // clear it if given
         nFXtype = synth->sysefx[nFX]->geteffect();
-        return effects(level);
+        return effects();
     }
     if (level < 4 && matchnMove(3, point, "insert"))
     {
         level = 3;
+        nFX = 0; // effects number limit changed
         matchnMove(2, point, "effects"); // clear it if given
         nFXtype = synth->insefx[nFX]->geteffect();
-        return effects(level);
+        return effects();
     }
     if (bitTest(level, all_fx))
-        return effects(level);
+        return effects();
 
     tmp = volPanShift();
     if(tmp > todo_msg)
@@ -1116,6 +1277,16 @@ int CmdInterface::commandSet()
 
     if (matchnMove(2, point, "program") || matchnMove(4, point, "instrument"))
     {
+        if (isRead)
+        {
+            string name = "MIDI program change ";
+            if (Runtime.EnableProgChange)
+                name += "enabled";
+            else
+                name += "disabled";
+            Runtime.Log(name, 1);
+            return done_msg;
+        }
         if (point[0] == '0')
             synth->SetSystemValue(115, 0);
         else
@@ -1125,6 +1296,16 @@ int CmdInterface::commandSet()
     }
     else if (matchnMove(2, point, "activate"))
     {
+        if (isRead)
+        {
+            string name = "Program change ";
+            if (Runtime.enable_part_on_voice_load)
+                name += "activates";
+            else
+                name += "ignores";
+            Runtime.Log(name + " part", 1);
+            return done_msg;
+        }
         if (point[0] == '0')
             synth->SetSystemValue(116, 0);
         else
@@ -1134,6 +1315,11 @@ int CmdInterface::commandSet()
     }
     if (matchnMove(3, point, "ccroot"))
     {
+        if (isRead)
+        {
+            Runtime.Log("Root CC is " + asString(Runtime.midi_bank_root));
+            return done_msg;
+        }
         if (point[0] != 0)
         {
             synth->SetSystemValue(113, string2int(point));
@@ -1145,6 +1331,11 @@ int CmdInterface::commandSet()
     }
     else if (matchnMove(3, point, "ccbank"))
     {
+        if (isRead)
+        {
+            Runtime.Log("Bank CC is " + asString(Runtime.midi_bank_C));
+            return done_msg;
+        }
         if (point[0] != 0)
         {
             synth->SetSystemValue(114, string2int(point));
@@ -1156,7 +1347,18 @@ int CmdInterface::commandSet()
     }
     else if (matchnMove(1, point, "extend"))
     {
-        if (point[0] != 0)
+         if (isRead)
+        {
+            string name = "Extended program change ";
+            tmp = Runtime.midi_upper_voice_C;
+            if (tmp <= 119)
+                name += "CC " + asString(tmp);
+            else
+                name += "disabled";
+            Runtime.Log(name, 1);
+            return done_msg;
+        }
+       if (point[0] != 0)
         {
             synth->SetSystemValue(117, string2int(point));
             reply = done_msg;
@@ -1167,6 +1369,11 @@ int CmdInterface::commandSet()
     }
     else if (matchnMove(2, point, "available")) // 16, 32, 64
     {
+        if (isRead)
+        {
+            Runtime.Log(asString(Runtime.NumAvailableParts) + " available parts", 1);
+            return done_msg;
+        }
         if (point[0] != 0)
         {
             synth->SetSystemValue(118, string2int(point));
@@ -1182,99 +1389,136 @@ int CmdInterface::commandSet()
         if (matchnMove(1, point, "midi"))
         {
             name = "midi" + name;
-            if (matchnMove(1, point, "alsa"))
+            if (isRead)
             {
-                Runtime.midiEngine = (midi_drivers) 2;
-                name += "alsa";
-            }
-            else if (matchnMove(1, point, "jack"))
-            {
-                Runtime.midiEngine = (midi_drivers) 1;
-                name += "jack";
+                tmp = (int) Runtime.midiEngine;
+                if (tmp == 2)
+                    name += "alsa";
+                else if (tmp == 1)
+                    name += "jack";
+                else
+                    name += "NULL";
             }
             else
-                return value_msg;
+            {
+                if (matchnMove(1, point, "alsa"))
+                {
+                    Runtime.midiEngine = (midi_drivers) 2;
+                    name += "alsa";
+                }
+                else if (matchnMove(1, point, "jack"))
+                {
+                    Runtime.midiEngine = (midi_drivers) 1;
+                    name += "jack";
+                }
+                else
+                    return value_msg;
+            }
         }
         else if (matchnMove(1, point, "audio"))
         {
             name = "audio" + name;
-            if (matchnMove(1, point, "alsa"))
+            if (isRead)
             {
-                Runtime.audioEngine = (audio_drivers) 2;
-                name += "alsa";
-            }
-            else if (matchnMove(1, point, "jack"))
-            {
-                Runtime.audioEngine = (audio_drivers) 1;
-                name += "jack";
+                tmp = (int) Runtime.audioEngine;
+                if (tmp == 2)
+                    name += "alsa";
+                else if (tmp == 1)
+                    name += "jack";
+                else
+                    name += "NULL";
             }
             else
-                return value_msg;
-
+            {
+                if (matchnMove(1, point, "alsa"))
+                {
+                    Runtime.audioEngine = (audio_drivers) 2;
+                    name += "alsa";
+                }
+                else if (matchnMove(1, point, "jack"))
+                {
+                    Runtime.audioEngine = (audio_drivers) 1;
+                    name += "jack";
+                }
+                else
+                    return value_msg;
+            }
         }
         else
             return opp_msg;
-        Runtime.Log("Preferred " + name);
-        Runtime.configChanged = true;
+        Runtime.Log("Preferred " + name, isRead);
+        if (!isRead)
+            Runtime.configChanged = true;
         return done_msg;
     }
     else if (matchnMove(1, point, "alsa"))
     {
         if (matchnMove(1, point, "midi"))
         {
-            if (point[0] != 0)
+            if (isRead || point[0] != 0)
             {
-                Runtime.alsaMidiDevice = (string) point;
-                Runtime.Log("* ALSA MIDI set to " + Runtime.alsaMidiDevice);
-                Runtime.configChanged = true;
+                if (!isRead)
+                {
+                    Runtime.alsaMidiDevice = (string) point;
+                    Runtime.configChanged = true;
+                }
+                Runtime.Log("* ALSA MIDI set to " + Runtime.alsaMidiDevice, isRead);
             }
             else
                 reply = value_msg;
         }
         else if (matchnMove(1, point, "audio"))
         {
-            if (point[0] != 0)
+            if (isRead || point[0] != 0)
             {
-                Runtime.alsaAudioDevice = (string) point;
-                Runtime.Log("* ALSA AUDIO set to " + Runtime.alsaAudioDevice);
-                Runtime.configChanged = true;
+                if (!isRead)
+                {
+                    Runtime.alsaAudioDevice = (string) point;
+                    Runtime.configChanged = true;
+                }
+                Runtime.Log("* ALSA AUDIO set to " + Runtime.alsaAudioDevice, isRead);
             }
             else
                 reply = value_msg;
         }
         else
             reply = opp_msg;
-        if (reply == todo_msg)
+        if (!isRead && reply == todo_msg)
             GuiThreadMsg::sendMessage(synth, GuiThreadMsg::UpdateConfig, 3);
-
     }
     else if (matchnMove(1, point, "jack"))
     {
         if (matchnMove(1, point, "midi"))
         {
-            if (point[0] != 0)
+            if (isRead || point[0] != 0)
             {
-                Runtime.jackMidiDevice = (string) point;
-                Runtime.Log("* jack MIDI set to " + Runtime.jackMidiDevice);
-                Runtime.configChanged = true;
+                if (!isRead)
+                {
+                    Runtime.jackMidiDevice = (string) point;
+                    Runtime.configChanged = true;
+                }
+                Runtime.Log("* jack MIDI set to " + Runtime.jackMidiDevice, isRead);
             }
             else
                 reply = value_msg;
         }
         else if (matchnMove(1, point, "server"))
         {
-            if (point[0] != 0)
+            if (isRead || point[0] != 0)
             {
-                Runtime.jackServer = (string) point;
-                Runtime.Log("* Jack server set to " + Runtime.jackServer);
-                Runtime.configChanged = true;
+                if (!isRead)
+                {
+                    Runtime.jackServer = (string) point;
+                    Runtime.configChanged = true;
+                }
+                Runtime.Log("* Jack server set to " + Runtime.jackServer, isRead);
             }
             else
                 reply = value_msg;
         }
         else
             reply = opp_msg;
-        if (reply == todo_msg)
+        if (!isRead && reply == todo_msg)
             GuiThreadMsg::sendMessage(synth, GuiThreadMsg::UpdateConfig, 2);
     }
     else
@@ -1401,13 +1645,14 @@ bool CmdInterface::cmdIfaceProcessCommand()
         else if (matchnMove(1, point, "history"))
         {
             if (matchnMove(1, point, "patchsets"))
-                reply = historyList(1);
+                historyList(2);
             else if (matchnMove(2, point, "scales"))
-                reply = historyList(2);
+                historyList(3);
             else if (matchnMove(2, point, "states"))
-                reply = historyList(4);
+                historyList(4);
             else
-                reply = historyList(7);
+                historyList(0);
+            reply = done_msg;
         }
         else if (matchnMove(1, point, "effects"))
             reply = effectsList();
@@ -1421,10 +1666,27 @@ bool CmdInterface::cmdIfaceProcessCommand()
     else if (matchnMove(1, point, "set"))
     {
         if (point[0] != 0)
-            reply = commandSet();
+        {
+            isRead = false;
+            reply = commandReadnSet();
+        }
         else
         {
             replyString = "set";
+            reply = what_msg;
+        }
+    }
+
+    else if (matchnMove(1, point, "read") || matchnMove(1, point, "get"))
+    {
+        if (point[0] != 0)
+        {
+            isRead = true;
+            reply = commandReadnSet();
+        }
+        else
+        {
+            replyString = "read";
             reply = what_msg;
         }
     }
@@ -1746,15 +2008,28 @@ void CmdInterface::cmdIfaceCommandLoop()
             if (currentInstance > 0)
                 prompt += (":" + asString(currentInstance));
             if (bitTest(level, part_lev))
+            {
                 prompt += (" part " + asString(npart));
+                nFXtype = synth->part[npart]->partefx[nFX]->geteffect();
+                if (synth->partonoffRead(npart))
+                    prompt += " on";
+                else
+                    prompt += " off";
+            }
             if (bitTest(level, all_fx))
             {
                 if (!bitTest(level, part_lev))
                 {
                     if (bitTest(level, ins_fx))
+                    {
                         prompt += " Ins";
+                        nFXtype = synth->insefx[nFX]->geteffect();
+                    }
                     else
+                    {
                         prompt += " Sys";
+                        nFXtype = synth->sysefx[nFX]->geteffect();
+                    }
                 }
                 prompt += (" FX " + asString(nFX) + " " + fx_list[nFXtype].substr(0, 5));
                 if (nFXtype > 0)

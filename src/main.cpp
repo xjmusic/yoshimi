@@ -204,7 +204,6 @@ static void *mainGuiThread(void *arg)
 
                 if (_synth)
                 {
-                    _synth->saveHistory(tmpID);
                     _synth->saveBanks(tmpID);
                     _synth->getRuntime().deadObjects->disposeBodies();
                     _synth->getRuntime().flushLog();
@@ -243,7 +242,7 @@ static void *mainGuiThread(void *arg)
         else
             usleep(33333);
     }
-    firstSynth->saveHistory(0);
+    firstSynth->saveHistory();
     firstSynth->saveBanks(0);
     return NULL;
 }
@@ -321,7 +320,6 @@ bool mainCreateNewInstance(unsigned int forceId)
     {
         cout << "\nStarted "<< synth->getUniqueId() << "\n";
         // following copied here for other instances
-        synth->loadHistory(synth->getUniqueId());
         synth->installBanks(synth->getUniqueId());
     }
     synthInstances.insert(std::make_pair(synth, musicClient));
@@ -457,7 +455,7 @@ int main(int argc, char *argv[])
     if (sigaction(SIGQUIT, &yoshimiSigAction, NULL))
         firstSynth->getRuntime().Log("Setting SIGQUIT handler failed");
     // following moved here for faster first synth startup
-    firstSynth->loadHistory(0);
+    firstSynth->loadHistory();
     firstSynth->installBanks(0);
     GuiThreadMsg::sendMessage(firstSynth, GuiThreadMsg::RefreshCurBank, 1);
 
@@ -478,7 +476,7 @@ int main(int argc, char *argv[])
     }
 
     void *ret;
-    pthread_join(thr, &ret);    
+    pthread_join(thr, &ret);
     if(ret == (void *)1)
     {
         goto bail_out;
