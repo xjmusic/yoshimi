@@ -69,6 +69,12 @@ static unsigned int getRemoveSynthId(bool remove = false, unsigned int idx = 0)
     return nextId;
 }
 
+// histories
+static vector<string> ParamsHistory;
+static vector<string> ScaleHistory;
+static vector<string> StateHistory;
+
+
 SynthEngine::SynthEngine(int argc, char **argv, bool _isLV2Plugin, unsigned int forceId) :
     uniqueId(getRemoveSynthId(false, forceId)),
     isLV2Plugin(_isLV2Plugin),
@@ -278,7 +284,7 @@ bool SynthEngine::Init(unsigned int audiosrate, int audiobufsize)
             if (loadXML(Runtime.paramsLoad))
             {
                 applyparameters();
-                Runtime.paramsLoad = Runtime.addParamHistory(Runtime.paramsLoad, ".xmz", Runtime.ParamsHistory);
+                addHistory(Runtime.paramsLoad, 2);
                 Runtime.Log("Loaded " + Runtime.paramsLoad + " parameters");
             }
             else
@@ -664,6 +670,8 @@ void SynthEngine::SetEffects(unsigned char category, unsigned char command, unsi
 
 void SynthEngine::SetBankRoot(int rootnum)
 {
+    string name;
+    int currentRoot;
     if (bank.setCurrentRootID(rootnum))
     {
         if (Runtime.showGui)
@@ -671,10 +679,20 @@ void SynthEngine::SetBankRoot(int rootnum)
             GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateBankRootDirs, 0);
             GuiThreadMsg::sendMessage(this, GuiThreadMsg::RescanForBanks, 0);
         }
-        Runtime.Log("Set root " + asString(rootnum) + " " + bank.getRootPath(bank.getCurrentRootID()));
+        currentRoot = bank.getCurrentRootID();
+        if (rootnum != currentRoot)
+            name = "Cant find ID " + asString(rootnum) + ". Current root is ";
+        else name = "Root set to ";
+        Runtime.Log(name + asString(currentRoot) + " " + bank.getRootPath(currentRoot));
     }
     else
         Runtime.Log("No match for root ID " + asString(rootnum));
+}
+
+
+int SynthEngine::ReadBankRoot(void)
+{
+    return bank.currentRootID;
 }
 
 
@@ -692,10 +710,18 @@ void SynthEngine::SetBank(int banknum)
         {
             GuiThreadMsg::sendMessage(this, GuiThreadMsg::RefreshCurBank, 0);
         }
-        Runtime.Log("Set bank " + asString(banknum) + " " + bank.roots [bank.currentRootID].banks [banknum].dirname);
+        Runtime.Log("Bank set to " + asString(banknum) + " " + bank.roots [bank.currentRootID].banks [banknum].dirname);
     }
     else
-        Runtime.Log("No bank " + asString(banknum)+ " in this root");
+    {
+        Runtime.Log("No bank " + asString(banknum)+ " in this root. Current bank is " + asString(ReadBank()));
+    }
+}
+
+
+int SynthEngine::ReadBank(void)
+{
+    return bank.currentBankID;
 }
 
 
@@ -824,6 +850,51 @@ void SynthEngine::SetPartDestination(unsigned char npart, unsigned char dest)
 void SynthEngine::SetPartPortamento(int npart, bool state)
 {
     part[npart]->ctl->portamento.portamento = state;
+}
+
+
+bool SynthEngine::ReadPartPortamento(int npart)
+{
+    return part[npart]->ctl->portamento.portamento;
+}
+
+
+void SynthEngine::SetPartKeyMode(int npart, int mode)
+{
+    switch(mode)
+    {
+        case 2:
+            part[npart]->Ppolymode = 0;
+            part[npart]->Plegatomode = 1;
+            Runtime.Log("mode set to 'legato'");
+            break;
+        case 1:
+            part[npart]->Ppolymode = 0;
+            part[npart]->Plegatomode = 0;
+            Runtime.Log("mode set to 'mono'");
+            break;
+        case 0:
+        default:
+            part[npart]->Ppolymode = 1;
+            part[npart]->Plegatomode = 0;
+            Runtime.Log("mode set to 'poly'");
+            break;
+    }
+}
+
+
+int SynthEngine::ReadPartKeyMode(int npart)
+{
+    int result;
+    bool poly = part[npart]->Ppolymode;
+    bool legato = part[npart]->Plegatomode;
+    if (!poly && legato)
+        result = 2;
+    else if (!poly && !legato)
+        result = 1;
+    else
+        result = 0;;
+    return result;
 }
 
 
@@ -987,26 +1058,64 @@ void SynthEngine::ListVectors(list<string>& msg_buf)
 {
     bool found = false;
 
-    for (int value = 0; value < NUM_MIDI_CHANNELS; ++value)
+    for (int chan = 0; chan < NUM_MIDI_CHANNELS; ++chan)
     {
-        if (Runtime.nrpndata.vectorEnabled[value])
-        {
+        if(SingleVector(msg_buf, chan))
             found = true;
-            msg_buf.push_back("Channel " + asString(value));
-            msg_buf.push_back("  X CC = " + asString((int)  Runtime.nrpndata.vectorXaxis[value])
-                            + "    features = " + asString((int)  Runtime.nrpndata.vectorXfeatures[value]));
-
-            if (Runtime.nrpndata.vectorYaxis[value] > 0x7f || Runtime.NumAvailableParts < NUM_MIDI_CHANNELS * 4)
-            msg_buf.push_back("  Y axis disabled");
-            else
-            {
-                msg_buf.push_back("  Y CC = " + asString((int) Runtime.nrpndata.vectorYaxis[value])
-                + "    features = " + asString((int) Runtime.nrpndata.vectorYfeatures[value]));
-            }
-        }
     }
     if (!found)
         msg_buf.push_back("No vectors enabled");
+}
+
+
+bool SynthEngine::SingleVector(list<string>& msg_buf, int chan)
+{
+    if (!Runtime.nrpndata.vectorEnabled[chan])
+        return false;
+
+    int Xfeatures = Runtime.nrpndata.vectorXfeatures[chan];
+    string Xtext = "Features =";
+    if (Xfeatures == 0)
+        Xtext = "No Features :(";
+    else
+    {
+        if (Xfeatures & 1)
+            Xtext += " 1";
+        if (Xfeatures & 2)
+            Xtext += " 2";
+        if (Xfeatures & 4)
+            Xtext += " 3";
+        if (Xfeatures & 8)
+            Xtext += " 4";
+    }
+    msg_buf.push_back("Channel " + asString(chan));
+    msg_buf.push_back("  X CC = " + asString((int)  Runtime.nrpndata.vectorXaxis[chan]) + ",  " + Xtext);
+    msg_buf.push_back("    L = " + part[chan]->Pname + ",  R = " + part[chan + 16]->Pname);
+
+    if (Runtime.nrpndata.vectorYaxis[chan] > 0x7f
+        || Runtime.NumAvailableParts < NUM_MIDI_CHANNELS * 4)
+        msg_buf.push_back("  Y axis disabled");
+    else
+    {
+        int Yfeatures = Runtime.nrpndata.vectorYfeatures[chan];
+        string Ytext = "Features =";
+        if (Yfeatures == 0)
+            Ytext = "No Features :(";
+        else
+        {
+            if (Yfeatures & 1)
+                Ytext += " 1";
+            if (Yfeatures & 2)
+                Ytext += " 2";
+            if (Yfeatures & 4)
+                Ytext += " 3";
+            if (Yfeatures & 8)
+                Ytext += " 4";
+        }
+        msg_buf.push_back("  Y CC = " + asString((int) Runtime.nrpndata.vectorYaxis[chan]) + ",  " + Ytext);
+        msg_buf.push_back("    U = " + part[chan + 32]->Pname + ",  D = " + part[chan + 48]->Pname);
+    }
+    return true;
 }
 
 
@@ -2012,8 +2121,7 @@ bool SynthEngine::saveBanks(int instance)
         name += ("-" + asString(instance));
     string bankname = name + ".banks";
     Runtime.xmlType = XML_BANK;
- //   unsigned int tmp = Runtime.GzipCompression;
- //   Runtime.GzipCompression = 0;
+
     XMLwrapper *xmltree = new XMLwrapper(this);
     if (!xmltree)
     {
@@ -2026,19 +2134,73 @@ bool SynthEngine::saveBanks(int instance)
 
     if (!xmltree->saveXMLfile(bankname))
         Runtime.Log("Failed to save config to " + bankname);
- //   Runtime.GzipCompression = tmp;
+
     delete xmltree;
 
     return true;
 }
 
 
-bool SynthEngine::loadHistory(int instance)
+void SynthEngine::addHistory(string name, int group)
+{
+
+    unsigned int name_start = name.rfind("/");
+    unsigned int name_end = name.rfind(".");
+
+    if (name_start == string::npos || name_end == string::npos
+            || (name_start - 1) >= name_end)
+        return;
+
+    bool copy = false;
+    switch (group)
+    {
+        case 4:
+            for (vector<string>::iterator it = StateHistory.begin(); it != StateHistory.end(); ++it)
+            {
+                if (*it == name)
+                    copy = true;
+            }
+            if (!copy)
+                StateHistory.push_back(name);
+            break;
+
+        case 3:
+            for (vector<string>::iterator it = ScaleHistory.begin(); it != ScaleHistory.end(); ++it)
+            {
+                if (*it == name)
+                    copy = true;
+            }
+            if (!copy)
+                ScaleHistory.push_back(name);
+            break;
+
+        case 2:
+        default:
+            for (vector<string>::iterator it = ParamsHistory.begin(); it != ParamsHistory.end(); ++it)
+            {
+                if (*it == name)
+                    copy = true;
+            }
+            if (!copy)
+                ParamsHistory.push_back(name);
+            break;
+    }
+}
+
+
+vector<string> * SynthEngine::getHistory(int group)
+{
+    if (group == 4)
+        return &StateHistory;
+    else if (group == 3)
+        return &ScaleHistory;
+    return &ParamsHistory;
+}
+
+
+bool SynthEngine::loadHistory()
 {
     string name = Runtime.ConfigDir + '/' + YOSHIMI;
-
-    if (instance > 0)
-        name += ("-" + asString(instance));
     string historyname = name + ".history";
     if (!isRegFile(historyname))
     {
@@ -2059,72 +2221,53 @@ bool SynthEngine::loadHistory(int instance)
     }
     int hist_size;
     string filetype;
-    if (xml->enterbranch("XMZ_PATCH_SETS"))
+    string type;
+    string extension;
+    for (int count = 2; count < 5; ++count)
     {
-        hist_size = xml->getpar("history_size", 0, 0, MAX_HISTORY);
-        for (int i = 0; i < hist_size; ++i)
+        switch (count)
         {
-            if (xml->enterbranch("XMZ_FILE", i))
-            {
-                filetype = xml->getparstr("xmz_file");
-                if (filetype.size() && isRegFile(filetype))
-                    Runtime.addParamHistory(filetype, ".xmz", Runtime.ParamsHistory);
-                xml->exitbranch();
-            }
+            case 2:
+                type = "XMZ_PATCH_SETS";
+                extension = "xmz_file";
+                break;
+            case 3:
+                type = "XMZ_SCALE";
+                extension = "xsz_file";
+                break;
+            case 4:
+                type = "XMZ_STATE";
+                extension = "state_file";
+                break;
         }
-        xml->exitbranch();
-    }
-
-    if (xml->enterbranch("XMZ_SCALE"))
-    {
-        hist_size = xml->getpar("history_size", 0, 0, MAX_HISTORY);
-
-        for (int i = 0; i < hist_size; ++i)
-        {
-            if (xml->enterbranch("XMZ_FILE", i))
+        if (xml->enterbranch(type))
+        { // should never exceed max history as size trimmed on save
+            hist_size = xml->getpar("history_size", 0, 0, MAX_HISTORY);
+            for (int i = 0; i < hist_size; ++i)
             {
-                filetype = xml->getparstr("xsz_file");
-                if (filetype.size() && isRegFile(filetype))
-                    Runtime.addParamHistory(filetype, ".xsz", Runtime.ScaleHistory);
-                xml->exitbranch();
+                if (xml->enterbranch("XMZ_FILE", i))
+                {
+                    filetype = xml->getparstr(extension);
+                    if (filetype.size() && isRegFile(filetype))
+                        addHistory(filetype, count);
+                    xml->exitbranch();
+                }
             }
+            xml->exitbranch();
         }
-        xml->exitbranch();
     }
-
-    if (xml->enterbranch("XMZ_STATE"))
-    {
-        hist_size = xml->getpar("history_size", 0, 0, MAX_HISTORY);
-
-        for (int i = 0; i < hist_size; ++i)
-        {
-            if (xml->enterbranch("XMZ_FILE", i))
-            {
-                filetype = xml->getparstr("state_file");
-                if (filetype.size() && isRegFile(filetype))
-                    Runtime.addParamHistory(filetype, ".state", Runtime.StateHistory);
-                xml->exitbranch();
-            }
-        }
-        xml->exitbranch();
-    }
-
     xml->exitbranch();
     delete xml;
     return true;
 }
 
 
-bool SynthEngine::saveHistory(int instance)
+bool SynthEngine::saveHistory()
 {
     string name = Runtime.ConfigDir + '/' + YOSHIMI;
-
-    if (instance > 0)
-        name += ("-" + asString(instance));
     string historyname = name + ".history";
     Runtime.xmlType = XML_HISTORY;
-    unsigned int tmp = Runtime.GzipCompression;
-    Runtime.GzipCompression = 0;
+
     XMLwrapper *xmltree = new XMLwrapper(this);
     if (!xmltree)
     {
@@ -2133,53 +2276,50 @@ bool SynthEngine::saveHistory(int instance)
     }
     xmltree->beginbranch("HISTORY");
     {
-        if (Runtime.ParamsHistory.size())
+        unsigned int offset;
+        int x;
+        string type;
+        string extension;
+        for (int count = 2; count < 5; ++count)
         {
-            xmltree->beginbranch("XMZ_PATCH_SETS");
-            xmltree->addpar("history_size", Runtime.ParamsHistory.size());
-            deque<HistoryListItem>::reverse_iterator rx = Runtime.ParamsHistory.rbegin();
-            unsigned int count = 0;
-            for (int x = 0; rx != Runtime.ParamsHistory.rend() && count <= MAX_HISTORY; ++rx, ++x)
+            switch (count)
             {
-                xmltree->beginbranch("XMZ_FILE", x);
-                xmltree->addparstr("xmz_file", rx->file);
+                case 2:
+                    type = "XMZ_PATCH_SETS";
+                    extension = "xmz_file";
+                    break;
+                case 3:
+                    type = "XMZ_SCALE";
+                    extension = "xsz_file";
+                    break;
+                case 4:
+                    type = "XMZ_STATE";
+                    extension = "state_file";
+                    break;
+            }
+            vector<string> listType = *getHistory(count);
+            if (listType.size())
+            {
+                offset = 0;
+                x = 0;
+                xmltree->beginbranch(type);
+                    xmltree->addpar("history_size", listType.size());
+                    if (listType.size() > MAX_HISTORY)
+                    offset = listType.size() - MAX_HISTORY;
+                    for (vector<string>::iterator it = listType.begin() + offset; it != listType.end(); ++it)
+                    {
+                        xmltree->beginbranch("XMZ_FILE", x);
+                            xmltree->addparstr(extension, *it);
+                        xmltree->endbranch();
+                        ++x;
+                    }
                 xmltree->endbranch();
             }
-            xmltree->endbranch();
-        }
-        if (Runtime.ScaleHistory.size())
-        {
-            xmltree->beginbranch("XMZ_SCALE");
-            xmltree->addpar("history_size", Runtime.ScaleHistory.size());
-            deque<HistoryListItem>::reverse_iterator rx = Runtime.ScaleHistory.rbegin();
-            unsigned int count = 0;
-            for (int x = 0; rx != Runtime.ScaleHistory.rend() && count <= MAX_HISTORY; ++rx, ++x)
-            {
-                xmltree->beginbranch("XMZ_FILE", x);
-                xmltree->addparstr("xsz_file", rx->file);
-                xmltree->endbranch();
-            }
-            xmltree->endbranch();
-        }
-        if (Runtime.StateHistory.size())
-        {
-            xmltree->beginbranch("XMZ_STATE");
-            xmltree->addpar("history_size", Runtime.StateHistory.size());
-            deque<HistoryListItem>::reverse_iterator rx = Runtime.StateHistory.rbegin();
-            unsigned int count = 0;
-            for (int x = 0; rx != Runtime.StateHistory.rend() && count <= MAX_HISTORY; ++rx, ++x)
-            {
-                xmltree->beginbranch("XMZ_FILE", x);
-                xmltree->addparstr("state_file", rx->file);
-                xmltree->endbranch();
-            }
-            xmltree->endbranch();
         }
     }
     xmltree->endbranch();
     if (!xmltree->saveXMLfile(historyname))
         Runtime.Log("Failed to save data to " + historyname);
-    Runtime.GzipCompression = tmp;
     delete xmltree;
     return true;
 }
