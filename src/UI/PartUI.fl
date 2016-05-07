@@ -11,7 +11,7 @@ comment {PartUI.cc} {in_source not_in_header
 comment {Original ZynAddSubFX author Nasca Octavian Paul
 Copyright (C) 2002-2005 Nasca Octavian Paul
 Copyright 2009-2011, Alan Calvert
-Copyright 2014-2016, Will Godfrey 
+Copyright 2014-2016, Will Godfrey
 
 This file is part of yoshimi, which is free software: you can redistribute
 it and/or modify it under the terms of the GNU Library General Public
@@ -54,7 +54,7 @@ decl {\#include "MasterUI.h"} {private global
 
 class PartSysEffSend {: {public Fl_Group, private MiscFuncs}
 } {
-  Function {make_window()} {open private
+  Function {make_window()} {private
   } {
     Fl_Window syseffsend {
       private xywh {916 904 150 145} type Double hide
@@ -150,13 +150,17 @@ class PartKitItem {: {public Fl_Group}
         }
         Fl_Button adeditbutton {
           label edit
-          callback {partui->showparameters(n,0);}
+          callback {partui->showparameters(n,0);
+if ((Fl::event_button() == 3))
+    synth->getGuiMaster()->partui->instrumentkitlist->hide();}
           xywh {420 0 40 15} box THIN_UP_BOX labelsize 11
           code0 {if (part->kit[n].Padenabled==0) o->deactivate();}
         }
         Fl_Button subeditbutton {
           label edit
-          callback {partui->showparameters(n,1);}
+          callback {partui->showparameters(n,1);
+if ((Fl::event_button() == 3))
+    synth->getGuiMaster()->partui->instrumentkitlist->hide();}
           xywh {490 0 40 15} box THIN_UP_BOX labelsize 11
           code0 {if (part->kit[n].Psubenabled==0) o->deactivate();}
         }
@@ -216,7 +220,9 @@ class PartKitItem {: {public Fl_Group}
         } {}
         Fl_Button padeditbutton {
           label edit
-          callback {partui->showparameters(n,2);}
+          callback {partui->showparameters(n,2);
+if ((Fl::event_button() == 3))
+    synth->getGuiMaster()->partui->instrumentkitlist->hide();}
           xywh {560 0 40 15} box THIN_UP_BOX labelsize 11
           code0 {if (part->kit[n].Ppadenabled==0) o->deactivate();}
         }
@@ -321,7 +327,7 @@ class PartKitItem {: {public Fl_Group}
     code {partkititem->hide();
       //delete(partkititem);} {}
   }
-  decl {Part *part;} {private local
+  decl {Part *part;} {public local
   }
   decl {int n;} {private local
   }
@@ -463,8 +469,9 @@ Offset}
       Fl_Spinner partkeyshift {
         label {Key Shift}
         callback {part->Pkeyshift= o->value()+64;}
-        xywh {202 116 38 18} labelsize 10 minimum -24 maximum 24 textsize 11
-        code0 {o->value(part->Pkeyshift - 64);}
+        xywh {202 116 38 18} labelsize 10 minimum -36 maximum 36 textsize 11
+        code0 {o->range(MIN_KEY_SHIFT, MAX_KEY_SHIFT);o->step(1.0);}
+        code1 {o->value(part->Pkeyshift - 64);}
       }
       Fl_Spinner partkeylimit {
         label {Key Limit}
@@ -813,7 +820,7 @@ else
           xywh {110 110 100 20} labelfont 1 labelsize 10
         }
       }
-      Fl_Group inseffectuigroup {open
+      Fl_Group inseffectuigroup {
         xywh {5 37 380 96} box FLAT_BOX color 48
       } {
         Fl_Group inseffectui {
@@ -824,7 +831,9 @@ else
       }
       Fl_Button {} {
         label Close
-        callback {partfx->hide();}
+        callback {partfx->hide();
+if ((Fl::event_button() == 3))
+    synth->getGuiMaster()->partui->instrumenteditwindow->show();}
         xywh {314 136 60 20} box THIN_UP_BOX
       }
       Fl_Choice sendtochoice {
@@ -881,13 +890,15 @@ else
     } {
       Fl_Button {} {
         label Close
-        callback {instrumentkitlist->hide();}
+        callback {instrumentkitlist->hide();
+if ((Fl::event_button() == 3))
+    synth->getGuiMaster()->partui->instrumenteditwindow->show();}
         xywh {569 348 63 20} box THIN_UP_BOX
       }
       Fl_Scroll kitlist {
         xywh {0 15 670 330} type VERTICAL box THIN_UP_BOX
       } {
-        Fl_Pack {} {open
+        Fl_Pack {} {
           xywh {0 20 670 320}
           code0 {for (int i=0;i<NUM_KIT_ITEMS;i++){partkititem[i]=new PartKitItem(0,0,670,20,"");partkititem[i]->init(part,i,this);}}
         } {}
@@ -920,12 +931,14 @@ else
         label Mode
         callback {//
     part->Pkitmode = o->value();
+    partKitOn = o->value() > 0;
     if (part->Pkitmode == 0)
         kitlist->deactivate();
     else
         kitlist->activate();}
         tooltip {Single = only 1st item in defined note range sounds} xywh {35 348 70 19} down_box BORDER_BOX labelsize 11 textfont 1 textsize 11
         code0 {o->value(part->Pkitmode);}
+        code1 {partKitOn = o->value() > 0;}
       } {
         MenuItem {} {
           label Off
@@ -965,11 +978,11 @@ else
       code0 {seteditname();}
       code1 {o->copy_label(synth->getGuiMaster()->setPartWindowTitle("Instrument Edit").c_str());}
     } {
-      Fl_Group {} {
+      Fl_Group {} {open
         xywh {0 220 395 110} box ENGRAVED_FRAME
       } {
         Fl_Group {} {
-          label ADDsynth
+          label ADDsynth open
           xywh {5 245 100 80} box ENGRAVED_FRAME labelfont 1
         } {
           Fl_Check_Button adsynenabledcheck {
@@ -997,7 +1010,9 @@ else
             label Edit
             callback {showparameters(0,0);
 copylabeltopanel();
-seteditname();}
+seteditname();
+if ((Fl::event_button() == 3))
+    instrumenteditwindow->hide();}
             xywh {15 281 80 34} box PLASTIC_UP_BOX color 222 selection_color 220 labelfont 1 labelsize 13 align 128
             code0 {if (part->kit[0].Padenabled==0) o->deactivate();}
           }
@@ -1031,7 +1046,9 @@ seteditname();}
             label Edit
             callback {showparameters(0,1);
 copylabeltopanel();
-seteditname();}
+seteditname();
+if ((Fl::event_button() == 3))
+    instrumenteditwindow->hide();}
             xywh {115 280 80 35} box PLASTIC_UP_BOX color 222 selection_color 220 labelfont 1 labelsize 13 align 128
             code0 {if (part->kit[0].Psubenabled==0) o->deactivate();}
           }
@@ -1065,19 +1082,25 @@ seteditname();}
             label Edit
             callback {showparameters(0,2);
 copylabeltopanel();
-seteditname();}
+seteditname();
+if ((Fl::event_button() == 3))
+    instrumenteditwindow->hide();}
             xywh {215 280 80 35} box PLASTIC_UP_BOX color 222 selection_color 220 labelfont 1 labelsize 13 align 128
             code0 {if (part->kit[0].Ppadenabled==0) o->deactivate();}
           }
         }
         Fl_Button {} {
           label {Kit Edit}
-          callback {instrumentkitlist->show();}
+          callback {instrumentkitlist->show();
+if ((Fl::event_button() == 3))
+    instrumenteditwindow->hide();}
           xywh {310 245 80 35} box PLASTIC_UP_BOX color 238 selection_color 220 labelfont 1 align 128
         }
         Fl_Button {} {
           label Effects
-          callback {partfx->show();}
+          callback {partfx->show();
+if ((Fl::event_button() == 3))
+    instrumenteditwindow->hide();}
           xywh {310 290 80 35} box PLASTIC_UP_BOX color 230 labelfont 1 labelsize 13
         }
       }
@@ -1283,12 +1306,12 @@ seteditname();}
             return;
 
         if (part->kit[kititem].adpars)
-            adnoteui = new ADnoteUI(part->kit[kititem].adpars);
+            adnoteui = new ADnoteUI(part->kit[kititem].adpars, npart, lastkititem);
         if (part->kit[kititem].subpars)
-            subnoteui = new SUBnoteUI(part->kit[kititem].subpars);
+            subnoteui = new SUBnoteUI(part->kit[kititem].subpars, npart, lastkititem);
 
         if (part->kit[kititem].padpars)
-            padnoteui = new PADnoteUI(part->kit[kititem].padpars);
+            padnoteui = new PADnoteUI(part->kit[kititem].padpars, npart, lastkititem);
     }
     if (engine == 0 && adnoteui != NULL)
         tname = synth->getGuiMaster()->setPartWindowTitle("AddSynth");
@@ -1412,7 +1435,7 @@ seteditname();}
   }
   decl {SUBnoteUI *subnoteui;} {private local
   }
-  decl {PADnoteUI *padnoteui;} {private local
+  decl {PADnoteUI *padnoteui;} {public local
   }
   decl {PartSysEffSend *psyef[NUM_SYS_EFX];} {private local
   }
@@ -1420,7 +1443,7 @@ seteditname();}
   }
   decl {int ninseff;} {private local
   }
-  decl {int lastkititem;} {private local
+  decl {int lastkititem;} {public local
   }
   decl {PartKitItem *partkititem[NUM_KIT_ITEMS];} {private local
   }
@@ -1429,5 +1452,7 @@ seteditname();}
   decl {int *plgroup;} {private local
   }
   decl {int engine;} {private local
+  }
+  decl {bool partKitOn;} {public local
   }
 } 
