@@ -1,16 +1,17 @@
 # data file for the Fltk User Interface Designer (fluid)
-version 1.0302 
-header_name {.h} 
+version 1.0303
+header_name {.h}
 code_name {.cc}
 comment {SubNoteUI.h} {not_in_source in_header
-} 
+}
 
 comment {SubNoteUI.cc} {in_source not_in_header
-} 
+}
 
 comment {Original ZynAddSubFX author Nasca Octavian Paul
 Copyright (C) 2002-2005 Nasca Octavian Paul
 Copyright 2009-2011, Alan Calvert
+Copyright 2015-2016, Will Godfreyt
 
 This file is part of yoshimi, which is free software: you can redistribute
 it and/or modify it under the terms of the GNU Library General Public
@@ -28,31 +29,31 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 This file is derivative of ZynAddSubFX original code, modified September 2014
 } {in_source in_header
-} 
+}
 
 decl {\#include "WidgetPDialUI.h"} {public local
-} 
+}
 
 decl {\#include "EnvelopeUI.h"} {public local
-} 
+}
 
 decl {\#include "FilterUI.h"} {public local
-} 
+}
 
 decl {\#include "PresetsUI.h"} {public local
-} 
+}
 
 decl {\#include "Misc/SynthHelper.h"} {public local
-} 
+}
 
 decl {\#include "Params/SUBnoteParameters.h"} {public local
-} 
+}
 
 decl {\#include "Misc/SynthEngine.h"} {public global
-} 
+}
 
 decl {\#include "MasterUI.h"} {private global
-} 
+}
 
 class SUBnoteharmonic {: {public Fl_Group}
 } {
@@ -124,7 +125,7 @@ hide();
   }
   decl {int n;} {private local
   }
-} 
+}
 
 class SUBnoteUI {selected : {public PresetsUI_, SynthHelper}
 } {
@@ -147,7 +148,14 @@ class SUBnoteUI {selected : {public PresetsUI_, SynthHelper}
         label Close
         callback {synth->getGuiMaster()->subNoteX = SUBparameters->x();
 synth->getGuiMaster()->subNoteY = SUBparameters->y();
-SUBparameters->hide();}
+SUBparameters->hide();
+if ((Fl::event_button() == 3))
+{
+    if (synth->getGuiMaster()->partui->partKitOn)
+        synth->getGuiMaster()->partui->instrumentkitlist->show();
+    else
+        synth->getGuiMaster()->partui->instrumenteditwindow->show();
+}}
         xywh {625 446 105 20} box THIN_UP_BOX labelfont 1 labelsize 11
       }
       Fl_Group {} {
@@ -425,7 +433,7 @@ SUBparameters->hide();}
         Fl_Group filterui {
           label {SUBsynthl - Filter}
           xywh {445 246 275 75} box FLAT_BOX color 50 align 144
-          code0 {o->init(pars->GlobalFilter,&pars->PGlobalFilterVelocityScale,&pars->PGlobalFilterVelocityScaleFunction);}
+          code0 {o->init(pars->GlobalFilter,&pars->PGlobalFilterVelocityScale,&pars->PGlobalFilterVelocityScaleFunction, npart, kititem, 2);}
           class FilterUI
         } {}
       }
@@ -586,9 +594,11 @@ pars->updateFrequencyMultipliers();}
         filterui->refresh();
         filterenv->refresh();} {}
   }
-  Function {SUBnoteUI(SUBnoteParameters *parameters)} {} {
-    code {pars = parameters; 
+  Function {SUBnoteUI(SUBnoteParameters *parameters, int npart_, int kititem_)} {} {
+    code {pars = parameters;
 synth = pars->getSynthEngine();
+npart = npart_;
+kititem = kititem_;
 make_window();} {}
   }
   Function {~SUBnoteUI()} {return_type virtual
@@ -603,4 +613,8 @@ make_window();} {}
   }
   decl {SynthEngine *synth;} {private local
   }
-} 
+  decl {int npart;} {private local
+  }
+  decl {int kititem;} {private local
+  }
+}
