@@ -23,7 +23,8 @@ cmake_policy (SET CMP0004 OLD)
 if (POLICY CMP0046)
     cmake_policy (SET CMP0046 OLD)
 endif (POLICY CMP0046)
-set (CMAKE_CXX_STANDARD 11)
+set (CMAKE_CXX_STANDARD 11) # we seem to need both for
+add_definitions(-std=c++11) # various versions of cmake
 set (YOSHIMI_VERSION "1.3.9 M")
 file (WRITE version.txt "${YOSHIMI_VERSION}")
 
@@ -350,6 +351,7 @@ add_definitions (-DNUM_MIDI_PARTS=64)
 add_definitions (-DNUM_MIDI_CHANNELS=16)
 add_definitions (-DMAX_ENVELOPE_POINTS=40)
 add_definitions (-DMIN_ENVELOPE_DB=-60)
+add_definitions (-DMAX_RESONANCE_POINTS=256)
 add_definitions (-DMAX_KEY_SHIFT=36)
 add_definitions (-DMIN_KEY_SHIFT=-36)
 
