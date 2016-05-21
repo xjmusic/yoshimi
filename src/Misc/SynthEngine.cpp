@@ -749,16 +749,16 @@ void SynthEngine::commandSend(float value, unsigned char type, unsigned char con
         return;
     }
     if (part == 0xf0)
-    {
-        if (engine == 32)
-            ;   // system effects
-        else if (engine == 64)
-            ;   // insertion effects
-        else
-            commandMain(value, type, control);
-    }
+        commandMain(value, type, control);
     else if (kit == 0xff)
         commandPart(value, type, control, part, kit, engine);
+    else if (kit >= 0x80)
+    {
+        if (insert < 0xff)
+            commandFilter(value, type, control, part, kit, engine, insert);
+        else
+            commandEffects(value, type, control, part, kit, engine);
+    }
     else if (engine == 2)
     {
         switch(insert)
@@ -1984,9 +1984,51 @@ void SynthEngine::commandFilter(float value, unsigned char type, unsigned char c
         actual = to_string(value);
 
     string name;
-    if (part == 0xf0)
-        name = "  Sys or Ins";
-    else if (engine == 0)
+    if (kit >= 0x80)
+    {
+        string efftype;
+        switch (kit & 0xf)
+        {
+            case 0:
+                efftype = " NO Effect";
+                break;
+            case 1:
+                efftype = " Reverb";
+                break;
+            case 2:
+                efftype = " Echo";
+                break;
+            case 3:
+                efftype = " Chorus";
+                break;
+            case 4:
+                efftype = " Phaser";
+                break;
+            case 5:
+                efftype = " AlienWah";
+                break;
+            case 6:
+                efftype = " Distortion";
+                break;
+            case 7:
+                efftype = " EQ";
+                break;
+            case 8:
+                efftype = " DynFilter";
+                break;
+        }
+
+        if (part == 0xf1)
+            name = "System";
+        else if (part == 0xf2)
+            name = "Insert";
+        else name = "Part " + to_string(part);
+        name += " Effect " + to_string(engine); // this is the effect number
+        Runtime.Log(name + efftype + " ~ Filter Parameter " + to_string(control) + "  Value " + actual);
+    return;
+    }
+
+    if (engine == 0)
         name = "  AddSynth";
     else if (engine == 1)
         name = "  SubSynth";
@@ -2197,6 +2239,62 @@ void SynthEngine::commandEnvelope(float value, unsigned char type, unsigned char
 }
 
 
+void SynthEngine::commandEffects(float value, unsigned char type, unsigned char control, unsigned char part, unsigned char kit, unsigned char engine)
+{
+    string actual;
+    if (type & 0x80)
+        actual = to_string((int)round(value));
+    else
+        actual = to_string(value);
+
+    string name;
+    if (part == 0xf1)
+        name = "System";
+    else if (part == 0xf2)
+        name = "Insert";
+    else
+        name = "Part " + to_string(part);
+    name += " Effect " + to_string(engine);
+
+    string efftype;
+    switch (kit & 0xf)
+    {
+        case 0:
+            efftype = " NO Effect";
+            break;
+        case 1:
+            efftype = " Reverb";
+            break;
+        case 2:
+            efftype = " Echo";
+            break;
+        case 3:
+            efftype = " Chorus";
+            break;
+        case 4:
+            efftype = " Phaser";
+            break;
+        case 5:
+            efftype = " AlienWah";
+            break;
+        case 6:
+            efftype = " Distortion";
+            break;
+        case 7:
+            efftype = " EQ";
+            break;
+        case 8:
+            efftype = " DynFilter";
+            break;
+    }
+
+    string contstr = "  Control " + to_string(control);
+
+    Runtime.Log(name + efftype + contstr + "  Value " + actual);
+}
+
+
+
 void SynthEngine::SetProgram(unsigned char chan, unsigned short pgm)
 {
     bool partOK = true;
@@ -2297,7 +2395,7 @@ void SynthEngine::SetPartDestination(unsigned char npart, unsigned char dest)
 
     if (part[npart]->Paudiodest & 2)
         GuiThreadMsg::sendMessage(this, GuiThreadMsg::RegisterAudioPort, npart);
-        string name;
+    string name;
     switch (dest)
     {
         case 1:
@@ -2399,7 +2497,7 @@ void SynthEngine::cliOutput(list<string>& msg_buf, unsigned int lines)
         for (rx = msg_buf.rbegin(); rx != msg_buf.rend(); ++rx)
             Runtime.Log(*rx);
             // we need this in case someone is working headless
-            cout << "\nReports sent to console window\n\n";
+        cout << "\nReports sent to console window\n\n";
     }
     else if (msg_buf.size() < lines) // Output will fit the screen
         for (it = msg_buf.begin(); it != msg_buf.end(); ++it)
