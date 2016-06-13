@@ -2,6 +2,7 @@
 #   CMakeLists.txt
 #
 #   Copyright 2009-2011, Alan Calvert
+#   Copyright 2014-2016, Will Godfrey, and others
 #
 #   This file is part of yoshimi, which is free software: you can
 #   redistribute it and/or modify it under the terms of the GNU General
@@ -24,8 +25,8 @@ if (POLICY CMP0046)
     cmake_policy (SET CMP0046 OLD)
 endif (POLICY CMP0046)
 set (CMAKE_CXX_STANDARD 11) # we seem to need both for
-add_definitions(-std=c++11) # various versions of cmake
-set (YOSHIMI_VERSION "1.3.9 M")
+add_definitions(-std=gnu++11) # various versions of cmake
+set (YOSHIMI_VERSION "1.4.0")
 file (WRITE version.txt "${YOSHIMI_VERSION}")
 
 set (CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -276,9 +277,8 @@ set (Effects_sources
 )
 
 set (Misc_sources
-    Misc/Config.cpp  Misc/SynthEngine.cpp  Misc/Bank.cpp  Misc/Microtonal.cpp
-    Misc/Part.cpp  Misc/XMLwrapper.cpp  Misc/MiscFuncs.cpp   Misc/WavFile.cpp
-    Misc/CmdInterface.cpp Misc/NSM.C Misc/NSM/Client.C Misc/debug.C
+    Misc/ConfBuild.cpp  Misc/Config.cpp  Misc/SynthEngine.cpp  Misc/Bank.cpp
+    Misc/Microtonal.cpp   Misc/Part.cpp  Misc/XMLwrapper.cpp  Misc/MiscFuncs.cpp   Misc/WavFile.cpp   Misc/CmdInterface.cpp
 )
 
 set (Params_sources
@@ -306,7 +306,8 @@ set (FltkUI_names
     "OscilGenUI"  "ADnoteUI"  "PADnoteUI"
     "EffUI"  "BankUI"  "PartUI"
     "MicrotonalUI"  "MasterUI" "MasterMiscUI"
-    "ParametersUI" "ConsoleUI"
+    "ParametersUI" "ConsoleUI" "VectorUI"
+    "WidgetMWSliderUI" "WidgetMWRollerUI"
 )
 
 # workaround fltk_wrap_ui breakage

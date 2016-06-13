@@ -1,17 +1,17 @@
 # data file for the Fltk User Interface Designer (fluid)
-version 1.0302
-header_name {.h}
+version 1.0303 
+header_name {.h} 
 code_name {.cc}
 comment {MasterUI.h} {not_in_source in_header
-}
+} 
 
 comment {MasterUI.cc} {in_source not_in_header
-}
+} 
 
 comment {Original ZynAddSubFX author Nasca Octavian Paul
 Copyright (C) 2002-2005 Nasca Octavian Paul
 Copyright 2009-2011, Alan Calvert
-Copyright 2014-2015, Will Godfrey
+Copyright 2014-2016, Will Godfrey
 
 This file is part of yoshimi, which is free software: you can redistribute
 it and/or modify it under the terms of the GNU Library General Public
@@ -29,61 +29,67 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 This file is a derivative of the ZynAddSubFX original, modified October 2014
 } {in_source in_header
-}
+} 
 
 decl {\#include <string>} {public local
-}
+} 
+
+decl {\#include <iostream>} {public local
+} 
 
 decl {using namespace std;} {public local
-}
+} 
 
 decl {\#include "ADnoteUI.h"} {public local
-}
+} 
 
 decl {\#include "SUBnoteUI.h"} {public local
-}
+} 
 
 decl {\#include "EffUI.h"} {public local
-}
+} 
 
 decl {\#include "VirKeyboardUI.h"} {public local
-}
+} 
 
 decl {\#include "ConfigUI.h"} {public local
-}
+} 
 
 decl {\#include "BankUI.h"} {public local
-}
+} 
 
 decl {\#include "PartUI.h"} {public local
-}
+} 
 
 decl {\#include "MicrotonalUI.h"} {public local
-}
+} 
 
 decl {\#include "PresetsUI.h"} {public local
-}
+} 
 
 decl {\#include "ParametersUI.h"} {public local
-}
+} 
 
 decl {\#include "ConsoleUI.h"} {public local
-}
+} 
 
 decl {\#include "MasterUI.h"} {private global
-}
+} 
+
+decl {\#include "WidgetMWSliderUI.h"} {private global
+} 
 
 decl {\#include "Misc/SynthEngine.h"} {public local
-}
+} 
 
 decl {\#include "Misc/MiscFuncs.h"} {public local
-}
+} 
 
 decl {\#define MIN_DB -48.0} {public local
-}
+} 
 
 decl {\#define NO_DB -68.0} {public local
-}
+} 
 
 class VUMeter {: {public Fl_Box, private MiscFuncs}
 } {
@@ -359,7 +365,7 @@ synth = _synth;
 	  }
       }} {}
   }
-}
+} 
 
 class SysEffSend {: {public WidgetPDial, private MiscFuncs}
 } {
@@ -385,9 +391,11 @@ class SysEffSend {: {public WidgetPDial, private MiscFuncs}
   }
   Function {handle(int event)} {return_type int
   } {
-    code {if (event == FL_PUSH || event == FL_DRAG)
+    code {//
+	if (event == FL_PUSH || event == FL_DRAG)
         {
             synth->setPsysefxsend(neff1,neff2,value());
+            synth->commandFetch(value(), (Fl::event_button() | 0x20 | (1 << 7)), neff2, 0xf1, 0xff, neff1, 16);
         }
         return WidgetPDial::handle(event);} {}
   }
@@ -397,14 +405,14 @@ class SysEffSend {: {public WidgetPDial, private MiscFuncs}
   }
   decl {SynthEngine *synth;} {private local
   }
-}
+} 
 
 class Panellistitem {selected : {public Fl_Group, private MiscFuncs}
 } {
   Function {make_window()} {private
   } {
     Fl_Window panellistitem {
-      private xywh {1195 47 60 275} type Double hide
+      private xywh {1195 44 60 275} type Double hide
       class Fl_Group
     } {
       Fl_Group panellistitemgroup {
@@ -423,15 +431,20 @@ class Panellistitem {selected : {public Fl_Group, private MiscFuncs}
           }
         }
         Fl_Box partadd {
-          xywh {5 28 17 27} box FLAT_BOX deactivate
+          xywh {5 25 17 30} box FLAT_BOX deactivate
         }
         Fl_Box partsub {
-          xywh {23 28 17 27} box FLAT_BOX deactivate
+          xywh {22 25 18 30} box FLAT_BOX deactivate
         }
         Fl_Box partpad {
-          xywh {40 28 17 27} box FLAT_BOX deactivate
+          xywh {40 25 17 30} box FLAT_BOX deactivate
         }
-        Fl_Button partname {
+        Fl_Text_Display partname {
+          label test
+          xywh {4 53 55 1} box NO_BOX labelfont 1 labelsize 10 align 193
+          code0 {setPartLabel(findengines(npart | *plgroup));}
+        }
+        Fl_Button partnam {
           label {  }
           callback {//
     if ((int)bankui->cbwig->value() != (npart + 1 + *plgroup))
@@ -440,23 +453,37 @@ class Panellistitem {selected : {public Fl_Group, private MiscFuncs}
         bankui->cbwig->do_callback();
     }
     bankui->Show();
-    setPartLabel(findengines(npart | *plgroup));}
-          xywh {4 27 55 30} box THIN_DOWN_FRAME labelfont 1 labelsize 10 align 208
-          code0 {setPartLabel(findengines(npart | *plgroup));}
+    //setPartLabel(findengines(npart | *plgroup));}
+          xywh {4 24 55 33} box THIN_DOWN_FRAME labelfont 1 labelsize 10 align 208
         }
         Fl_Slider partvolume {
           callback {//
-              synth->part[npart + *plgroup]->setVolume(o->value());
-              synth->getGuiMaster()->setPartVolWidget(npart + *plgroup, o->value());}
-          xywh {8 65 30 110} type {Vert Knob} box THIN_DOWN_BOX minimum 127 maximum 0 step 1 value 127
-          code0 {o->value(synth->part[npart + *plgroup]->Pvolume);}
+        int realvalue;
+	if (Fl::event_button() == 3)
+	{
+	    realvalue = 96;
+	    o->value(127-realvalue);
+	    o->redraw();	    
+	}
+	else
+	    realvalue = 127 - o->value();
+        synth->part[npart + *plgroup]->setVolume(realvalue);
+        synth->getGuiMaster()->setPartVolWidget(npart + *plgroup, realvalue);
+        
+        send_data(0, realvalue);}
+          xywh {8 65 30 110} type {Vert Knob} box THIN_DOWN_BOX maximum 127 step 1
+          code0 {o->value(127 - synth->part[npart + *plgroup]->Pvolume);}
+          class mwheel_slider
         }
         Fl_Dial partpanning {
           callback {//
               synth->part[npart + *plgroup]->SetController(C_panning, o->value());
-              synth->getGuiMaster()->setPartPanWidget(npart + *plgroup, o->value());}
+              synth->getGuiMaster()->setPartPanWidget(npart + *plgroup, o->value());
+              
+              send_data(2, o->value());}
           xywh {17 180 30 30} maximum 127 step 1
           code0 {o->value(synth->part[npart + *plgroup]->Ppanning);}
+          code1 {o->init(64);}
           class WidgetPDial
         }
         Fl_Button {} {
@@ -474,9 +501,12 @@ Right mouse button: Instrument edit} xywh {12 247 40 20} box PLASTIC_UP_BOX labe
         }
         Fl_Choice partrcv {
           callback {//
-              synth->part[npart + *plgroup]->Prcvchn=o->value();
-              synth->getGuiMaster()->setPartMidiWidget(npart + *plgroup, o->value() + 1);
-              o->textcolor(FL_BLACK);}
+	      int tmp = o->value() & 0xf;
+              synth->part[npart + *plgroup]->Prcvchn = tmp;
+              synth->getGuiMaster()->setPartMidiWidget(npart + *plgroup, tmp + 1);
+              o->textcolor(FL_BLACK);
+              
+              send_data(5, tmp);}
           tooltip {receive from Midi channel} xywh {8 210 50 15} down_box BORDER_BOX labelsize 10 align 5 textfont 1 textsize 10
           code0 {for(int i = 0; i < NUM_MIDI_CHANNELS; i++)
             {
@@ -488,7 +518,9 @@ Right mouse button: Instrument edit} xywh {12 247 40 20} box PLASTIC_UP_BOX labe
           code1 {o->value(synth->part[npart + *plgroup]->Prcvchn);}
         } {}
         Fl_Choice audiosend {
-          callback {synth->SetPartDestination(npart + *plgroup, o->value() + 1);}
+          callback {synth->SetPartDestination(npart + *plgroup, o->value() + 1);
+
+send_data(120, o->value());}
           tooltip {Set Audio Destination} xywh {8 229 50 15} box BORDER_BOX down_box BORDER_BOX labelsize 9 textsize 9
           code0 {if (synth->part[npart + *plgroup]->Paudiodest == 2) o->value(1); else if (synth->part[npart + *plgroup]->Paudiodest == 3) o->value(2); else o->value(0);}
         } {
@@ -521,11 +553,17 @@ Right mouse button: Instrument edit} xywh {12 247 40 20} box PLASTIC_UP_BOX labe
             }
             if ((int)bankui->cbwig->value() == (npart + 1 + *plgroup))
                 bankui->cbwig->do_callback();
-            o->redraw();}
+            o->redraw();
+            
+            send_data(8, o->value());}
         private xywh {5 0 45 20} down_box DOWN_BOX labeltype EMBOSSED_LABEL labelsize 15 align 24
         code0 {o->value(synth->part[npart + *plgroup]->Penabled);}
       }
     }
+  }
+  Function {send_data(int control, float value, bool isInteger = true)} {} {
+    code {//
+synth->commandFetch(value, (Fl::event_button() | 0x20 | (isInteger << 7)), control, npart, 0xff, 0xff);} {}
   }
   Function {Panellistitem(int x,int y, int w, int h, const char *label=0):Fl_Group(x,y,w,h,label)} {} {
     code {npart = 0;
@@ -550,7 +588,7 @@ Right mouse button: Instrument edit} xywh {12 247 40 20} box PLASTIC_UP_BOX labe
 
     setPartLabel(findengines(setpart));
 
-    partvolume->value(synth->part[setpart]->Pvolume);
+    partvolume->value(127 - synth->part[setpart]->Pvolume);
     partpanning->value(synth->part[setpart]->Ppanning);
     int tmpch = synth->part[setpart]->Prcvchn;
     if (tmpch < NUM_MIDI_CHANNELS)
@@ -580,21 +618,21 @@ Right mouse button: Instrument edit} xywh {12 247 40 20} box PLASTIC_UP_BOX labe
   }
   Function {setPartLabel(int engine)} {} {
     code {//
+    partadd->damage(1);
+    partsub->damage(1);
+    partpad->damage(1);
     if (engine & 1)
         partadd->color(ADD_COLOUR);
     else
         partadd->color(BASE_COLOUR);
-    partadd->redraw();
     if (engine & 2)
         partsub->color(SUB_COLOUR);
     else
         partsub->color(BASE_COLOUR);
-    partsub->redraw();
     if (engine & 4)
         partpad->color(PAD_COLOUR);
     else
         partpad->color(BASE_COLOUR);
-    partpad->redraw();
     partname->label(synth->part[npart | *plgroup]->Pname.c_str());} {}
   }
   Function {findengines(int npart)} {return_type {unsigned int}
@@ -626,4 +664,4 @@ Right mouse button: Instrument edit} xywh {12 247 40 20} box PLASTIC_UP_BOX labe
   }
   decl {int *plgroup;} {public local
   }
-}
+} 

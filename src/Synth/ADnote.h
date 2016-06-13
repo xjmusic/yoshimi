@@ -133,6 +133,7 @@ class ADnote : public Carcass, private SynthHelper, private Float2Int
             int filterbypass;
             int DelayTicks;
             float *OscilSmp;  // Waveform of the Voice
+            int phase_offset; // PWM emulation
 
             // Frequency parameters
             int fixedfreq;   // if the frequency is fixed to 440 Hz
@@ -140,6 +141,8 @@ class ADnote : public Carcass, private SynthHelper, private Float2Int
 
             float Detune;     // cents = basefreq * VoiceDetune
             float FineDetune;
+            float BendAdjust;
+            float OffsetHz;
 
             Envelope *FreqEnvelope;
             LFO      *FreqLfo;
@@ -170,6 +173,7 @@ class ADnote : public Carcass, private SynthHelper, private Float2Int
 
             // Modulator parameters
             FMTYPE FMEnabled;
+            unsigned char FMFreqFixed;
             int    FMVoice;
             float *VoiceOut; // Voice Output used by other voices if use this as modullator
             float *FMSmp;    // Wave of the Voice

@@ -73,6 +73,7 @@ static unsigned int getRemoveSynthId(bool remove = false, unsigned int idx = 0)
 static vector<string> ParamsHistory;
 static vector<string> ScaleHistory;
 static vector<string> StateHistory;
+static vector<string> VectorHistory;
 
 
 SynthEngine::SynthEngine(int argc, char **argv, bool _isLV2Plugin, unsigned int forceId) :
@@ -425,7 +426,7 @@ void *SynthEngine::RBPthread(void)
                 Runtime.Log("Unable to read data from Root/bank/Program");
         }
         else
-            usleep(500);
+            usleep(100); // yes it's a hack but is totally reliable
     }
     return NULL;
 }
@@ -731,7 +732,7 @@ void SynthEngine::commandFetch(float value, unsigned char type, unsigned char co
      * while testing, this simply sends everything to commandSend but eventually it will
      * partially do the decding and direction via ring buffers for actualy control.
      */
-    commandSend(value, type, control, part, kit, engine, insert, insertParam);
+    //commandSend(value, type, control, part, kit, engine, insert, insertParam);
     return;
 }
 
@@ -748,9 +749,13 @@ void SynthEngine::commandSend(float value, unsigned char type, unsigned char con
         Runtime.Log("\nButton " + asString((int) type & 7) + "\nPart " + asString((int) part) + "\nKit " + asString((int) kit) + "\nEngine " + asString((int) engine) + "\nInsert " + asString((int) insert) + "  Insert Param " + asString((int) insertParam) + "\nControl " + asString((int) control) + "  Value " + asString(value) + isf);
         return;
     }
-    if (part == 0xf0)
+    if (part == 0xc0)
+        commandVector(value, type, control);
+    else if (part == 0xf0)
         commandMain(value, type, control);
-    else if (kit == 0xff)
+    else if ((part == 0xf1 || part == 0xf2) && kit == 0xff)
+        commandSysIns(value, type, control, part, engine, insert);
+    else if (kit == 0xff || (kit & 0x20))
         commandPart(value, type, control, part, kit, engine);
     else if (kit >= 0x80)
     {
@@ -857,6 +862,67 @@ void SynthEngine::commandSend(float value, unsigned char type, unsigned char con
 }
 
 
+void SynthEngine::commandVector(float value, unsigned char type, unsigned char control)
+{
+    string actual;
+    if (type & 0x80)
+        actual = to_string((int)round(value));
+    else
+        actual = to_string(value);
+
+    string contstr = "";
+    switch (control)
+    {
+        case 0:
+            contstr = "Base Channel";
+            break;
+        case 1:
+            contstr = "Options";
+            break;
+
+        case 16:
+        case 32:
+            contstr = "Controller";
+            break;
+        case 17:
+            contstr = "Left Instrument";
+            break;
+        case 18:
+            contstr = "Right Instrument";
+            break;
+        case 19:
+        case 35:
+            contstr = "Feature 0";
+            break;
+        case 20:
+        case 36:
+            contstr = "Feature 1";
+            break;
+        case 21:
+        case 37:
+            contstr = "Feature 2 ";
+            break;
+        case 22:
+        case 38:
+            contstr = "Feature 3";
+            break;
+        case 33:
+            contstr = "Up Instrument";
+            break;
+        case 34:
+            contstr = "Down Instrument";
+            break;
+    }
+    string name = "Vector ";
+    if (control >= 32)
+        name += "Y ";
+
+    else if(control >= 16)
+        name += "X ";
+    Runtime.Log(name + contstr + " value " + actual);
+}
+
+
 void SynthEngine::commandMain(float value, unsigned char type, unsigned char control)
 {
     string actual;
@@ -882,9 +948,6 @@ void SynthEngine::commandMain(float value, unsigned char type, unsigned char con
         case 32:
             contstr = "Detune";
             break;
-        case 34:
-            contstr = "Detune clear";
-        break;
         case 35:
             contstr = "Key Shift";
             break;
@@ -910,8 +973,8 @@ void SynthEngine::commandPart(float value, unsigned char type, unsigned char con
 
 
     string kitnum;
-    if (kit <= 0x10)
-        kitnum = "  Kit " + to_string(kit);
+    if (kit < 0xff)
+        kitnum = "  Kit " + to_string(kit & 0x1f) + " ";
     else
         kitnum = "  ";
 
@@ -929,15 +992,15 @@ void SynthEngine::commandPart(float value, unsigned char type, unsigned char con
     }
     else
     {
-        switch (engine)
+        switch (engine) // needs aligning with other engine numbers
         {
-            case 0:
+            case 1:
                 name = "AddSynth ";
                 break;
-            case 1:
+            case 2:
                 name = "SubSynth ";
                 break;
-            case 2:
+            case 3:
                 name = "PadSynth ";
                 break;
         }
@@ -954,9 +1017,6 @@ void SynthEngine::commandPart(float value, unsigned char type, unsigned char con
             break;
         case 2:
             contstr = "Panning";
-            break;
-        case 3:
-            contstr = "Pan Zero";
             break;
         case 4:
             contstr = "Vel Offset";
@@ -997,6 +1057,19 @@ void SynthEngine::commandPart(float value, unsigned char type, unsigned char con
             contstr = "Key Shift";
             break;
 
+        case 40:
+            contstr = "Effect Send 0";
+            break;
+        case 41:
+            contstr = "Effect Send 1";
+            break;
+        case 42:
+            contstr = "Effect Send 2";
+            break;
+        case 43:
+            contstr = "Effect Send 3";
+            break;
+
         case 48:
             contstr = "Humanise";
             break;
@@ -1011,8 +1084,16 @@ void SynthEngine::commandPart(float value, unsigned char type, unsigned char con
             contstr = "Kit Mode";
             break;
 
+        case 64:
+            contstr = "Effect Number";
+            break;
+
         case 96:
-            contstr = "Clear";
+            contstr = "Reset Note Range";
+            break;
+
+        case 120:
+            contstr = "Audio destination";
             break;
 
         case 128:
@@ -1126,9 +1207,6 @@ void SynthEngine::commandAdd(float value, unsigned char type, unsigned char cont
         case 2:
             contstr = "Panning";
             break;
-        case 3:
-            contstr = "Pan Zero";
-            break;
 
         case 32:
             contstr = "Detune";
@@ -1241,9 +1319,6 @@ void SynthEngine::commandAddVoice(float value, unsigned char type, unsigned char
             break;
         case 2:
             contstr = "Panning";
-            break;
-        case 3:
-            contstr = "Pan Zero";
             break;
         case 4:
             contstr = "Minus";
@@ -1365,10 +1440,10 @@ void SynthEngine::commandAddVoice(float value, unsigned char type, unsigned char
             contstr = " Delay";
             break;
         case 129:
-            contstr = " ON";
+            contstr = " Enable";
             break;
         case 130:
-            contstr = " Resonance";
+            contstr = " Resonance Enable";
             break;
         case 136:
             contstr = " Osc Phase";
@@ -1436,9 +1511,6 @@ void SynthEngine::commandSub(float value, unsigned char type, unsigned char cont
             break;
         case 2:
             contstr = "Panning";
-            break;
-        case 3:
-            contstr = "Pan Zero";
             break;
         case 16:
             contstr = "Bandwidth";
@@ -1548,9 +1620,6 @@ void SynthEngine::commandPad(float value, unsigned char type, unsigned char cont
             break;
         case 2:
             contstr = "Panning";
-            break;
-        case 3:
-            contstr = "Pan Zero";
             break;
 
         case 16:
@@ -2236,6 +2305,49 @@ void SynthEngine::commandEnvelope(float value, unsigned char type, unsigned char
     }
 
     Runtime.Log("Part " + to_string(part) + "  Kit " + to_string(kit) + name  + env + " Env  " + contstr + " value " + actual);
+}
+
+
+void SynthEngine::commandSysIns(float value, unsigned char type, unsigned char control, unsigned char part, unsigned char engine, unsigned char insert)
+{
+    string actual;
+    if (type & 0x80)
+        actual = to_string((int)round(value));
+    else
+        actual = to_string(value);
+
+    string name;
+    if (part == 0xf1)
+        name = "System ";
+    else
+        name = "Insert ";
+
+    string contstr;
+    string second;
+    if (insert == 0xff)
+    {
+        second = "";
+        switch (control)
+        {
+            case 0:
+                contstr = "Number ";
+                break;
+            case 1:
+                contstr = to_string(engine) + " Type ";
+                break;
+            case 2:
+                contstr = to_string(engine) + " To ";
+                break;
+        }
+        contstr = "Effect " + contstr + actual;
+    }
+    else
+    {
+        contstr = "From Effect " + to_string(engine);
+        second = " To Effect " + to_string(control)  + "  Value " + actual;
+    }
+
+    Runtime.Log(name  + contstr + second);
 }
 
 
@@ -3008,6 +3120,34 @@ void SynthEngine::SetSystemValue(int type, int value)
             Runtime.saveConfig();
             Runtime.Log("Settings saved");
             break;
+
+        case 128: // shortform NRPN channel switch
+
+            if (value >= NUM_MIDI_PARTS) // single row
+            {
+                int start = value & 0xc;
+                value &= 0x3f;
+                for (int i = start; i < start + 4; ++i)
+                {
+                    if (i != value)
+                        part[i]->Prcvchn = start | NUM_MIDI_CHANNELS;
+                    else
+                        part[i]->Prcvchn = start;
+                }
+            }
+            else // columns
+            {
+                int chan = value & 0xf;
+                for (int i = chan; i < NUM_MIDI_PARTS; i += NUM_MIDI_CHANNELS)
+                {
+                    if (i != value)
+                        part[i]->Prcvchn = chan | NUM_MIDI_CHANNELS;
+                    else
+                       part[i]->Prcvchn = chan;
+                }
+            }
+            GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePart,0);
+            break;
     }
 }
 
@@ -3052,13 +3192,15 @@ bool SynthEngine::vectorInit(int dHigh, unsigned char chan, int par)
         int parts = Runtime.NumAvailableParts;
         if ((dHigh == 0) && (parts < NUM_MIDI_CHANNELS * 2))
         {
-            Runtime.Log("Vector control needs at least " + asString(NUM_MIDI_CHANNELS * 2) + " parts");
-            return true;
+            SetSystemValue(118, NUM_MIDI_CHANNELS * 2);
+            partonoffLock(chan, 1);
+            partonoffLock(chan + NUM_MIDI_CHANNELS, 1);
         }
         else if ((dHigh == 1) && (parts < NUM_MIDI_CHANNELS * 4))
         {
-            Runtime.Log("Vector control Y axis needs " + asString(NUM_MIDI_CHANNELS * 4) + " parts");
-            return true;
+            SetSystemValue(118, NUM_MIDI_CHANNELS * 4);
+            partonoffLock(chan + NUM_MIDI_CHANNELS * 2, 1);
+            partonoffLock(chan + NUM_MIDI_CHANNELS * 3, 1);
         }
         name = Runtime.testCCvalue(par);
     }
@@ -3234,6 +3376,8 @@ void SynthEngine::ClearNRPNs(void)
         Runtime.nrpndata.vectorEnabled[chan] = false;
         Runtime.nrpndata.vectorXaxis[chan] = 0xff;
         Runtime.nrpndata.vectorYaxis[chan] = 0xff;
+        Runtime.nrpndata.vectorXfeatures[chan] = 0;
+        Runtime.nrpndata.vectorYfeatures[chan] = 0;
     }
 }
 
@@ -3749,7 +3893,6 @@ bool SynthEngine::saveBanks(int instance)
 
 void SynthEngine::addHistory(string name, int group)
 {
-
     unsigned int name_start = name.rfind("/");
     unsigned int name_end = name.rfind(".");
 
@@ -3775,7 +3918,9 @@ void SynthEngine::addHistory(string name, int group)
 
 vector<string> * SynthEngine::getHistory(int group)
 {
-    if (group == 4)
+    if (group == 5)
+        return &VectorHistory;
+    else if (group == 4)
         return &StateHistory;
     else if (group == 3)
         return &ScaleHistory;
@@ -3808,7 +3953,7 @@ bool SynthEngine::loadHistory()
     string filetype;
     string type;
     string extension;
-    for (int count = 2; count < 5; ++count)
+    for (int count = 2; count < 6; ++count)
     {
         switch (count)
         {
@@ -3823,6 +3968,10 @@ bool SynthEngine::loadHistory()
             case 4:
                 type = "XMZ_STATE";
                 extension = "state_file";
+                break;
+            case 5:
+                type = "XMZ_VECTOR";
+                extension = "xvy_file";
                 break;
         }
         if (xml->enterbranch(type))
@@ -3865,7 +4014,7 @@ bool SynthEngine::saveHistory()
         int x;
         string type;
         string extension;
-        for (int count = 2; count < 5; ++count)
+        for (int count = 2; count < 6; ++count)
         {
             switch (count)
             {
@@ -3880,6 +4029,10 @@ bool SynthEngine::saveHistory()
                 case 4:
                     type = "XMZ_STATE";
                     extension = "state_file";
+                    break;
+                case 5:
+                    type = "XMZ_VECTOR";
+                    extension = "xvy_file";
                     break;
             }
             vector<string> listType = *getHistory(count);
@@ -3941,6 +4094,7 @@ bool SynthEngine::loadVector(unsigned char baseChan, string name, bool full)
         Runtime. Log("Extract Data, no VECTOR branch");
         return false;
     }
+    addHistory(file, 5);
     int lastPart = NUM_MIDI_PARTS;
     if (baseChan >= NUM_MIDI_CHANNELS)
         baseChan = xml->getpar255("Source_channel", 0);
@@ -4006,7 +4160,7 @@ bool SynthEngine::loadVector(unsigned char baseChan, string name, bool full)
             part[npart + baseChan]->Prcvchn = baseChan;
             xml->exitbranch();
             if (partonoffRead(npart + baseChan) && (part[npart + baseChan]->Paudiodest & 2))
-            GuiThreadMsg::sendMessage(this, GuiThreadMsg::RegisterAudioPort, npart + baseChan);
+                GuiThreadMsg::sendMessage(this, GuiThreadMsg::RegisterAudioPort, npart + baseChan);
         }
         GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePart,0);
     // need to ensure thread safety here.
@@ -4091,7 +4245,9 @@ bool SynthEngine::saveVector(unsigned char baseChan, string name, bool full)
                 xml->endbranch();
             }
         }
-        if (!xml->saveXMLfile(file))
+        if (xml->saveXMLfile(file))
+            addHistory(file, 5);
+        else
         {
             Runtime.Log("Failed to save data to " + file);
             ok = false;
