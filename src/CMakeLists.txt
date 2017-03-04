@@ -297,6 +297,7 @@ set (Effects_sources
 set (Misc_sources
     Misc/ConfBuild.cpp  Misc/Config.cpp  Misc/SynthEngine.cpp  Misc/Bank.cpp  Misc/Splash.cpp
     Misc/Microtonal.cpp   Misc/Part.cpp  Misc/XMLwrapper.cpp  Misc/MiscFuncs.cpp   Misc/WavFile.cpp
+    Misc/NSM.C   Misc/NSM/Client.C   Misc/debug.C
 )
 
 set (Interface_Sources
