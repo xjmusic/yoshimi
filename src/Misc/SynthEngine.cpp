@@ -5,7 +5,7 @@
     Copyright (C) 2002-2005 Nasca Octavian Paul
     Copyright 2009-2011, Alan Calvert
     Copyright 2009, James Morris
-    Copyright 2014-2016, Will Godfrey & others
+    Copyright 2014-2017, Will Godfrey & others
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -21,7 +21,9 @@
     yoshimi; if not, write to the Free Software Foundation, Inc., 51 Franklin
     Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-    This file is derivative of original ZynAddSubFX code, last modified March 2016
+    This file is derivative of original ZynAddSubFX code.
+
+    Modified March 2017
 */
 
 #include<stdio.h>
@@ -41,6 +43,7 @@ using namespace std;
 #include <stdlib.h>
 #include <unistd.h>
 
+#define MUTEX
 
 static unsigned int getRemoveSynthId(bool remove = false, unsigned int idx = 0)
 {
@@ -74,15 +77,19 @@ static vector<string> ParamsHistory;
 static vector<string> ScaleHistory;
 static vector<string> StateHistory;
 static vector<string> VectorHistory;
+static vector<string> MidiLearnHistory;
 
 
 SynthEngine::SynthEngine(int argc, char **argv, bool _isLV2Plugin, unsigned int forceId) :
     uniqueId(getRemoveSynthId(false, forceId)),
     isLV2Plugin(_isLV2Plugin),
     bank(this),
+    interchange(this),
+    midilearn(this),
+    mididecode(this),
     Runtime(this, argc, argv),
     presetsstore(this),
-    shutup(false),
+    fadeAll(0),
     samplerate(48000),
     samplerate_f(samplerate),
     halfsamplerate_f(samplerate / 2),
@@ -122,7 +129,7 @@ SynthEngine::SynthEngine(int argc, char **argv, bool _isLV2Plugin, unsigned int 
         insefx[nefx] = NULL;
     for (int nefx = 0; nefx < NUM_SYS_EFX; ++nefx)
         sysefx[nefx] = NULL;
-    shutup = false;
+    fadeAll = 0;
 }
 
 
@@ -174,8 +181,12 @@ bool SynthEngine::Init(unsigned int audiosrate, int audiobufsize)
     bufferbytes = buffersize * sizeof(float);
     oscilsize_f = oscilsize = Runtime.Oscilsize;
     halfoscilsize_f = halfoscilsize = oscilsize / 2;
-    fadeStep = 10.0f / samplerate; // 100mS fade;
+    fadeStep = 10.0f / samplerate; // 100mS fade
+    ControlStep = (127.0f / samplerate) * 5.0f; // 200mS for 0 to 127
     int found = 0;
+
+    if (!interchange.Init(this))
+        goto bail_out;
 
     if (!pthread_mutex_init(&processMutex, NULL))
         processLock = &processMutex;
@@ -209,13 +220,23 @@ bool SynthEngine::Init(unsigned int audiosrate, int audiobufsize)
 
     if (!(vuringbuf = jack_ringbuffer_create(sizeof(VUtransfer))))
     {
-        Runtime.Log("SynthEngine failed to create vu ringbuffer");
+        Runtime.Log("SynthEngine failed to create vuringbuf");
+        goto bail_out;
+    }
+    if (jack_ringbuffer_mlock(vuringbuf))
+    {
+        Runtime.Log("Failed to lock vuringbuf memory");
         goto bail_out;
     }
 
     if (!(RBPringbuf = jack_ringbuffer_create(512)))
     {
-        Runtime.Log("SynthEngine failed to create GUI ringbuffer");
+        Runtime.Log("SynthEngine failed to create RBPringbuf");
+        goto bail_out;
+    }
+    if (jack_ringbuffer_mlock(vuringbuf))
+    {
+        Runtime.Log("Failed to lock RBPringbuf memory");
         goto bail_out;
     }
 
@@ -320,11 +341,15 @@ bool SynthEngine::Init(unsigned int audiosrate, int audiobufsize)
     }
 
 
-    if (!Runtime.startThread(&RBPthreadHandle, _RBPthread, this, true, 7, false))
+    if (!Runtime.startThread(&RBPthreadHandle, _RBPthread, this, false, 0, false, "RBP"))
     {
         Runtime.Log("Failed to start RBP thread");
         goto bail_out;
     }
+
+    // we seem to need this here only for first time startup :(
+    bank.setCurrentBankID(Runtime.tempBank);
+
     return true;
 
 
@@ -389,6 +414,8 @@ void *SynthEngine::RBPthread(void)
     unsigned int read;
     unsigned int found;
     unsigned int tries;
+    unsigned char tmp;
+    string name;
     while (Runtime.runSynth)
     {
         if (jack_ringbuffer_read_space(RBPringbuf) >= readsize)
@@ -409,24 +436,69 @@ void *SynthEngine::RBPthread(void)
             {
                 switch ((unsigned char)block.data[0])
                 {
-                    case 1:
+                    case 1: // load root
                         SetBankRoot(block.data[1]);
                         break;
 
-                    case 2:
+                    case 2: // load bank
                         SetBank(block.data[1]);
                         break;
 
-                    case 3:
+                    case 3: // load standard instrument
                         SetProgram(block.data[1], block.data[2]);
+                        break;
+
+                    case 4: // load upper set instrument
+                        SetProgram(block.data[1], (block.data[2] + 128));
+                        break;
+
+                    case 5: // load file named instrument via miscMsg
+                        SetProgramToPart(block.data[1], -1, miscMsgPop(block.data[2]));
+                        break;
+
+                    case 6: // cease all sound or load named file via miscMsg
+                        tmp = block.data[1] & 0xff;
+                        if (tmp == 1)
+                        {
+                            actionLock(lockmute);
+                            ShutUp();
+                            actionLock(unlock);
+                        }
+                        else if(tmp == 2)
+                            resetAll();
+
+                        else if(tmp == 3) // patchset
+                            loadPatchSetAndUpdate(miscMsgPop(block.data[2]));
+
+                        else if (tmp == 4) // vector
+                            loadVectorAndUpdate(block.data[3], block.data[2]);
+                        break;
+
+                    case 7: // load named state via miscMsg
+                        ; // to do
+                        break;
+
+                    case 10: // set global fine detune
+                        microtonal.Pglobalfinedetune = block.data[1];
+                        setAllPartMaps();
+                        break;
+
+                    case 11: // set global key shift
+                        setPkeyshift(block.data[1]);
+                        setAllPartMaps();
+                        break;
+
+                    case 12: // set part keyshift
+                        part[(unsigned char)block.data[1]]->Pkeyshift = block.data[2];
+                        setPartMap(block.data[1]);
                         break;
                 }
             }
             else
-                Runtime.Log("Unable to read data from Root/bank/Program");
+                Runtime.Log("Unable to read data from Root/Bank/Program");
         }
         else
-            usleep(100); // yes it's a hack but is totally reliable
+            usleep(120); // yes it's a hack but seems reliable
     }
     return NULL;
 }
@@ -435,6 +507,7 @@ void *SynthEngine::RBPthread(void)
 void SynthEngine::defaults(void)
 {
     setPvolume(90);
+    TransVolume = Pvolume - 1; // ensure it is always set
     setPkeyshift(64);
     for (int npart = 0; npart < NUM_MIDI_PARTS; ++npart)
     {
@@ -459,16 +532,36 @@ void SynthEngine::defaults(void)
             setPsysefxsend(nefx, nefxto, 0);
     }
     microtonal.defaults();
+    setAllPartMaps();
     Runtime.currentPart = 0;
+    Runtime.channelSwitchType = 0;
+    Runtime.channelSwitchCC = 128;
+    Runtime.channelSwitchValue = 0;
     //CmdInterface.defaults(); // **** need to work out how to call this
     Runtime.NumAvailableParts = NUM_MIDI_CHANNELS;
     ShutUp();
 }
 
 
+void SynthEngine::setPartMap(int npart)
+{
+    part[npart]->setNoteMap(part[npart]->Pkeyshift - 64);
+}
+
+
+void SynthEngine::setAllPartMaps(void)
+{
+    for (int npart = 0; npart < NUM_MIDI_PARTS; ++ npart)
+        part[npart]->setNoteMap(part[npart]->Pkeyshift - 64);
+}
+
 // Note On Messages (velocity == 0 => NoteOff)
 void SynthEngine::NoteOn(unsigned char chan, unsigned char note, unsigned char velocity)
 {
+#ifdef REPORT_NOTEON
+    struct timeval tv1, tv2;
+    gettimeofday(&tv1, NULL);
+#endif
     if (!velocity)
         this->NoteOff(chan, note);
     else if (!isMuted())
@@ -478,14 +571,31 @@ void SynthEngine::NoteOn(unsigned char chan, unsigned char note, unsigned char v
             {
                if (partonoffRead(npart))
                 {
+#ifdef MUTEX
                     actionLock(lock);
+#endif
                     part[npart]->NoteOn(note, velocity, keyshift);
+#ifdef MUTEX
                     actionLock(unlock);
+#endif
                 }
                 else if (VUpeak.values.parts[npart] > (-velocity))
                     VUpeak.values.parts[npart] = -(0.2 + velocity); // ensure fake is always negative
             }
         }
+#ifdef REPORT_NOTEON
+    if (Runtime.showTimes)
+    {
+        gettimeofday(&tv2, NULL);
+        if (tv1.tv_usec > tv2.tv_usec)
+        {
+            tv2.tv_sec--;
+            tv2.tv_usec += 1000000;
+            }
+        int actual = (tv2.tv_sec - tv1.tv_sec) *1000000 + (tv2.tv_usec - tv1.tv_usec);
+        Runtime.Log("Note time " + to_string(actual) + "uS");
+    }
+#endif
 }
 
 
@@ -497,9 +607,13 @@ void SynthEngine::NoteOff(unsigned char chan, unsigned char note)
         // mask values 16 - 31 to still allow a note off
         if (chan == (part[npart]->Prcvchn & 0xef) && partonoffRead(npart))
         {
+#ifdef MUTEX
             actionLock(lock);
+#endif
             part[npart]->NoteOff(note);
+#ifdef MUTEX
             actionLock(unlock);
+#endif
         }
     }
 }
@@ -511,39 +625,46 @@ void SynthEngine::SetController(unsigned char chan, int type, short int par)
     if (type == Runtime.midi_bank_C)
     {
         SetBank(par); //shouldn't get here. Banks are set directly via SetBank method from MusicIO class
+        return;
     }
-    else
-    { // bank change doesn't directly affect parts.
-        int npart;
-        if (chan < NUM_MIDI_CHANNELS)
-        {
-            for (npart = 0; npart < Runtime.NumAvailableParts; ++npart)
-            {   // Send the controller to all part assigned to the channel
-                if (chan == part[npart]->Prcvchn && partonoffRead(npart))
-                {
-                    part[npart]->SetController(type, par);
-                    if (type == 7 || type == 10) // currently only volume and pan
-                        GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePanelItem, npart);
-                }
-            }
-        }
-        else
-        {
-            npart = chan & 0x7f;
-            if (npart < Runtime.NumAvailableParts)
+    if (type == Runtime.channelSwitchCC)
+    {
+        SetSystemValue(128, par);
+        return;
+    }
+    int npart;
+    if (chan < NUM_MIDI_CHANNELS)
+    {
+        for (npart = 0; npart < Runtime.NumAvailableParts; ++npart)
+        {   // Send the controller to all part assigned to the channel
+            if (chan == part[npart]->Prcvchn && partonoffRead(npart))
             {
                 part[npart]->SetController(type, par);
-                if (type == 7 || type == 10) // currently only volume and pan
+                if (type == 7 || type == 10) // only a few
                     GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePanelItem, npart);
+                else if (type == 1 || type == 11 || type == 71 || type == 74)
+                    GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateControllers, npart);
             }
         }
-        if (type == C_allsoundsoff)
-        {   // cleanup insertion/system FX
-            for (int nefx = 0; nefx < NUM_SYS_EFX; ++nefx)
-                sysefx[nefx]->cleanup();
-            for (int nefx = 0; nefx < NUM_INS_EFX; ++nefx)
-                insefx[nefx]->cleanup();
+    }
+    else
+    {
+        npart = chan & 0x7f;
+        if (npart < Runtime.NumAvailableParts)
+        {
+            part[npart]->SetController(type, par);
+            if (type == 7 || type == 10) // only a few
+                GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePanelItem, npart);
+            else if (type == 1 || type == 11 || type == 71 || type == 74)
+                    GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateControllers, npart);
         }
+    }
+    if (type == C_allsoundsoff)
+    {   // cleanup insertion/system FX
+        for (int nefx = 0; nefx < NUM_SYS_EFX; ++nefx)
+            sysefx[nefx]->cleanup();
+        for (int nefx = 0; nefx < NUM_INS_EFX; ++nefx)
+            insefx[nefx]->cleanup();
     }
 }
 
@@ -672,19 +793,44 @@ void SynthEngine::SetEffects(unsigned char category, unsigned char command, unsi
 void SynthEngine::SetBankRoot(int rootnum)
 {
     string name;
-    int currentRoot;
+    int foundRoot;
+    struct timeval tv1, tv2;
+    gettimeofday(&tv1, NULL);
+    int originalRoot = bank.getCurrentRootID();
+    int originalBank = bank.getCurrentBankID();
     if (bank.setCurrentRootID(rootnum))
     {
+        foundRoot = bank.getCurrentRootID();
+        if (foundRoot != rootnum)
+        { // abort and recover old settings
+            bank.setCurrentRootID(originalRoot);
+            bank.setCurrentBankID(originalBank);
+            foundRoot = originalRoot;
+        }
         if (Runtime.showGui)
         {
             GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateBankRootDirs, 0);
             GuiThreadMsg::sendMessage(this, GuiThreadMsg::RescanForBanks, 0);
         }
-        currentRoot = bank.getCurrentRootID();
-        if (rootnum != currentRoot)
-            name = "Cant find ID " + asString(rootnum) + ". Current root is ";
-        else name = "Root set to ";
-        Runtime.Log(name + asString(currentRoot) + " " + bank.getRootPath(currentRoot));
+        name = asString(foundRoot) + " " + bank.getRootPath(foundRoot);
+        if (rootnum != foundRoot)
+            name = "Cant find ID " + asString(rootnum) + ". Current root is " + name;
+        else
+        {
+            if (Runtime.showTimes)
+            {
+                gettimeofday(&tv2, NULL);
+                if (tv1.tv_usec > tv2.tv_usec)
+                {
+                    tv2.tv_sec--;
+                    tv2.tv_usec += 1000000;
+                }
+                int actual = (tv2.tv_sec - tv1.tv_sec) *1000000 + (tv2.tv_usec - tv1.tv_usec);
+                name += ("  Time " + to_string(actual) + "uS");
+            }
+            name = "Root set to " + name;
+        }
+        Runtime.Log(name);
     }
     else
         Runtime.Log("No match for root ID " + asString(rootnum));
@@ -705,13 +851,27 @@ void SynthEngine::SetBank(int banknum)
     */
 
     //new implementation uses only 1 call :)
+    struct timeval tv1, tv2;
+    gettimeofday(&tv1, NULL);
     if (bank.setCurrentBankID(banknum, true))
     {
+        string name = "Bank set to " + asString(banknum) + " " + bank.roots [bank.currentRootID].banks [banknum].dirname;
+        if (Runtime.showTimes)
+        {
+            gettimeofday(&tv2, NULL);
+            if (tv1.tv_usec > tv2.tv_usec)
+            {
+                tv2.tv_sec--;
+                tv2.tv_usec += 1000000;
+            }
+            int actual = (tv2.tv_sec - tv1.tv_sec) *1000000 + (tv2.tv_usec - tv1.tv_usec);
+            name += ("  Time " + to_string(actual) + "uS");
+        }
+        Runtime.Log(name);
         if (Runtime.showGui)
         {
             GuiThreadMsg::sendMessage(this, GuiThreadMsg::RefreshCurBank, 0);
         }
-        Runtime.Log("Bank set to " + asString(banknum) + " " + bank.roots [bank.currentRootID].banks [banknum].dirname);
     }
     else
     {
@@ -726,1687 +886,12 @@ int SynthEngine::ReadBank(void)
 }
 
 
-void SynthEngine::commandFetch(float value, unsigned char type, unsigned char control, unsigned char part, unsigned char kit, unsigned char engine, unsigned char insert, unsigned char insertParam)
-{
-    /*
-     * while testing, this simply sends everything to commandSend but eventually it will
-     * partially do the decding and direction via ring buffers for actualy control.
-     */
-    //commandSend(value, type, control, part, kit, engine, insert, insertParam);
-    return;
-}
-
-
-void SynthEngine::commandSend(float value, unsigned char type, unsigned char control, unsigned char part, unsigned char kit, unsigned char engine, unsigned char insert, unsigned char insertParam)
-{
-    bool isGui = type & 0x20;
-    char button = type & 0x1f;
-    string isf;
-    if (isGui && button != 2)
-    {
-        if (!(type &0x80))
-            isf = "f";
-        Runtime.Log("\nButton " + asString((int) type & 7) + "\nPart " + asString((int) part) + "\nKit " + asString((int) kit) + "\nEngine " + asString((int) engine) + "\nInsert " + asString((int) insert) + "  Insert Param " + asString((int) insertParam) + "\nControl " + asString((int) control) + "  Value " + asString(value) + isf);
-        return;
-    }
-    if (part == 0xc0)
-        commandVector(value, type, control);
-    else if (part == 0xf0)
-        commandMain(value, type, control);
-    else if ((part == 0xf1 || part == 0xf2) && kit == 0xff)
-        commandSysIns(value, type, control, part, engine, insert);
-    else if (kit == 0xff || (kit & 0x20))
-        commandPart(value, type, control, part, kit, engine);
-    else if (kit >= 0x80)
-    {
-        if (insert < 0xff)
-            commandFilter(value, type, control, part, kit, engine, insert);
-        else
-            commandEffects(value, type, control, part, kit, engine);
-    }
-    else if (engine == 2)
-    {
-        switch(insert)
-        {
-            case 0xff:
-                commandPad(value, type, control, part, kit);
-                break;
-            case 0:
-                commandLFO(value, type, control, part, kit, engine, insert, insertParam);
-                break;
-            case 1:
-                commandFilter(value, type, control, part, kit, engine, insert);
-                break;
-            case 2:
-            case 3:
-            case 4:
-                commandEnvelope(value, type, control, part, kit, engine, insert, insertParam);
-                break;
-            case 5:
-            case 6:
-            case 7:
-                commandOscillator(value, type, control, part, kit, engine, insert);
-                break;
-            case 8:
-            case 9:
-                commandResonance(value, type, control, part, kit, engine, insert);
-                break;
-        }
-    }
-    else if (engine == 1)
-    {
-        switch (insert)
-        {
-            case 0xff:
-                commandSub(value, type, control, part, kit, insert);
-                break;
-            case 1:
-                commandFilter(value, type, control, part, kit, engine, insert);
-                break;
-            case 2:
-            case 3:
-            case 4:
-                commandEnvelope(value, type, control, part, kit, engine, insert, insertParam);
-                break;
-        }
-    }
-    else if (engine >= 0x80)
-    {
-        switch (insert)
-        {
-            case 0xff:
-                commandAddVoice(value, type, control, part, kit, engine);
-                break;
-            case 0:
-                commandLFO(value, type, control, part, kit, engine, insert, insertParam);
-                break;
-            case 1:
-                commandFilter(value, type, control, part, kit, engine, insert);
-                break;
-            case 2:
-            case 3:
-            case 4:
-                commandEnvelope(value, type, control, part, kit, engine, insert, insertParam);
-                break;
-            case 5:
-            case 6:
-            case 7:
-                commandOscillator(value, type, control, part, kit, engine, insert);
-                break;
-        }
-    }
-    else if (engine == 0)
-    {
-        switch (insert)
-        {
-            case 0xff:
-                commandAdd(value, type, control, part, kit);
-                break;
-            case 0:
-                commandLFO(value, type, control, part, kit, engine, insert, insertParam);
-                break;
-            case 1:
-                commandFilter(value, type, control, part, kit, engine, insert);
-                break;
-            case 2:
-            case 3:
-            case 4:
-                commandEnvelope(value, type, control, part, kit, engine, insert, insertParam);
-                break;
-            case 8:
-                commandResonance(value, type, control, part, kit, engine, insert);
-                break;
-        }
-    }
-    // just do nothing if not recognised
-}
-
-
-void SynthEngine::commandVector(float value, unsigned char type, unsigned char control)
-{
-    string actual;
-    if (type & 0x80)
-        actual = to_string((int)round(value));
-    else
-        actual = to_string(value);
-
-    string contstr = "";
-    switch (control)
-    {
-        case 0:
-            contstr = "Base Channel";
-            break;
-        case 1:
-            contstr = "Options";
-            break;
-
-        case 16:
-        case 32:
-            contstr = "Controller";
-            break;
-        case 17:
-            contstr = "Left Instrument";
-            break;
-        case 18:
-            contstr = "Right Instrument";
-            break;
-        case 19:
-        case 35:
-            contstr = "Feature 0";
-            break;
-        case 20:
-        case 36:
-            contstr = "Feature 1";
-            break;
-        case 21:
-        case 37:
-            contstr = "Feature 2 ";
-            break;
-        case 22:
-        case 38:
-            contstr = "Feature 3";
-            break;
-        case 33:
-            contstr = "Up Instrument";
-            break;
-        case 34:
-            contstr = "Down Instrument";
-            break;
-    }
-    string name = "Vector ";
-    if (control >= 32)
-        name += "Y ";
-
-    else if(control >= 16)
-        name += "X ";
-    Runtime.Log(name + contstr + " value " + actual);
-}
-
-
-void SynthEngine::commandMain(float value, unsigned char type, unsigned char control)
-{
-    string actual;
-    if (type & 0x80)
-        actual = to_string((int)round(value));
-    else
-        actual = to_string(value);
-
-    string contstr = "";
-    switch (control)
-    {
-        case 0:
-            contstr = "Volume";
-            break;
-
-        case 14:
-            contstr = "Part Number";
-            break;
-        case 15:
-            contstr = "Available Parts";
-            break;
-
-        case 32:
-            contstr = "Detune";
-            break;
-        case 35:
-            contstr = "Key Shift";
-            break;
-
-        case 96:
-            contstr = "Reset All";
-            break;
-        case 128:
-            contstr = "Stop";
-            break;
-    }
-    Runtime.Log("Main " + contstr + " value " + actual);
-}
-
-
-void SynthEngine::commandPart(float value, unsigned char type, unsigned char control, unsigned char part, unsigned char kit, unsigned char engine)
-{
-    string actual;
-    if (type & 0x80)
-        actual = to_string((int)round(value));
-    else
-        actual = to_string(value);
-
-
-    string kitnum;
-    if (kit < 0xff)
-        kitnum = "  Kit " + to_string(kit & 0x1f) + " ";
-    else
-        kitnum = "  ";
-
-    string name;
-    if (control >= 0x80)
-    {
-        if (control >= 0xe0)
-            name = "";
-        else
-        {
-            name = "Controller ";
-            if (control >= 0xa0)
-                name += "Portamento ";
-        }
-    }
-    else
-    {
-        switch (engine) // needs aligning with other engine numbers
-        {
-            case 1:
-                name = "AddSynth ";
-                break;
-            case 2:
-                name = "SubSynth ";
-                break;
-            case 3:
-                name = "PadSynth ";
-                break;
-        }
-    }
-
-    string contstr = "";
-    switch (control)
-    {
-        case 0:
-            contstr = "Volume";
-            break;
-        case 1:
-            contstr = "Vel Sens";
-            break;
-        case 2:
-            contstr = "Panning";
-            break;
-        case 4:
-            contstr = "Vel Offset";
-            break;
-        case 5:
-            contstr = "Midi";
-            break;
-        case 6:
-            contstr = "Mode";
-            break;
-        case 7:
-            contstr = "Portamento";
-            break;
-        case 8:
-            contstr = "Enable";
-            break;
-        case 9:
-            contstr = "Mute";
-            break;
-
-        case 16:
-            contstr = "Min Note";
-            break;
-        case 17:
-            contstr = "Max Note";
-            break;
-        case 18:
-            contstr = "Min To Last";
-            break;
-        case 19:
-            contstr = "Max To Last";
-            break;
-
-        case 33:
-            contstr = "Key Limit";
-            break;
-        case 35:
-            contstr = "Key Shift";
-            break;
-
-        case 40:
-            contstr = "Effect Send 0";
-            break;
-        case 41:
-            contstr = "Effect Send 1";
-            break;
-        case 42:
-            contstr = "Effect Send 2";
-            break;
-        case 43:
-            contstr = "Effect Send 3";
-            break;
-
-        case 48:
-            contstr = "Humanise";
-            break;
-
-        case 56:
-            contstr = "Mode";
-            break;
-        case 57:
-            contstr = "Drum Mode";
-            break;
-        case 58:
-            contstr = "Kit Mode";
-            break;
-
-        case 64:
-            contstr = "Effect Number";
-            break;
-
-        case 96:
-            contstr = "Reset Note Range";
-            break;
-
-        case 120:
-            contstr = "Audio destination";
-            break;
-
-        case 128:
-            contstr = "Vol Range";
-            break;
-        case 129:
-            contstr = "Vol Enable";
-            break;
-        case 130:
-            contstr = "Pan Width";
-            break;
-        case 131:
-            contstr = "Mod Wheel Depth";
-            break;
-        case 132:
-            contstr = "Exp Mod Wheel";
-            break;
-        case 133:
-            contstr = "Bandwidth depth";
-            break;
-        case 134:
-            contstr = "Exp Bandwidth";
-            break;
-        case 135:
-            contstr = "Expression Enable";
-            break;
-        case 136:
-            contstr = "FM Amp Enable";
-            break;
-        case 137:
-            contstr = "Sustain Ped Enable";
-            break;
-        case 138:
-            contstr = "Pitch Wheel Range";
-            break;
-        case 139:
-            contstr = "Filter Q Depth";
-            break;
-        case 140:
-            contstr = "Filter Cutoff Depth";
-            break;
-
-        case 144:
-            contstr = "Res Cent Freq Depth";
-            break;
-        case 145:
-            contstr = "Res Band Depth";
-            break;
-
-        case 160:
-            contstr = "Time";
-            break;
-        case 161:
-            contstr = "Tme Stretch";
-            break;
-        case 162:
-            contstr = "Threshold";
-            break;
-        case 163:
-            contstr = "Threshold Type";
-            break;
-        case 164:
-            contstr = "Prop Enable";
-            break;
-        case 165:
-            contstr = "Prop Rate";
-            break;
-        case 166:
-            contstr = "Prop depth";
-            break;
-        case 168:
-            contstr = "Enable";
-            break;
-
-        case 224:
-            contstr = "Clear";
-            break;
-    }
-    Runtime.Log("Part " + to_string(part) + kitnum + name + contstr + " value " + actual);
-}
-
-
-void SynthEngine::commandAdd(float value, unsigned char type, unsigned char control, unsigned char part, unsigned char kit)
-{
-    string actual;
-    if (type & 0x80)
-        actual = to_string((int)round(value));
-    else
-        actual = to_string(value);
-
-    string name = "";
-    switch (control & 0x70)
-    {
-        case 0:
-            name = " Amplitude ";
-            break;
-        case 32:
-            name = " Frequency ";
-            break;
-    }
-
-    string contstr = "";
-    switch (control)
-    {
-        case 0:
-            contstr = "Volume";
-            break;
-        case 1:
-            contstr = "Vel Sens";
-            break;
-        case 2:
-            contstr = "Panning";
-            break;
-
-        case 32:
-            contstr = "Detune";
-            break;
-        case 33:
-            contstr = "Eq T";
-            break;
-        case 34:
-            contstr = "440Hz";
-            break;
-        case 35:
-            contstr = "Octave";
-            break;
-        case 36:
-            contstr = "Det type";
-            break;
-        case 37:
-            contstr = "Coarse Det";
-            break;
-        case 39:
-            contstr = "Rel B Wdth";
-            break;
-
-        case 48:
-            contstr = "Par 1";
-            break;
-        case 49:
-            contstr = "Par 2";
-            break;
-        case 50:
-            contstr = "Force H";
-            break;
-        case 51:
-            contstr = "Position";
-            break;
-
-        case 112:
-            contstr = "Stereo";
-            break;
-        case 113:
-            contstr = "Rnd Grp";
-            break;
-
-        case 120:
-            contstr = "De Pop";
-            break;
-        case 121:
-            contstr = "Punch Strngth";
-            break;
-        case 122:
-            contstr = "Punch Time";
-            break;
-        case 123:
-            contstr = "Punch Strtch";
-            break;
-        case 124:
-            contstr = "Punch Vel";
-            break;
-    }
-
-    Runtime.Log("Part " + to_string(part) + "  Kit " + to_string(kit) + "  AddSynth " + name + contstr + " value " + actual);
-}
-
-
-void SynthEngine::commandAddVoice(float value, unsigned char type, unsigned char control, unsigned char part, unsigned char kit,unsigned char engine)
-{
-    string actual;
-    if (type & 0x80)
-        actual = to_string((int)round(value));
-    else
-        actual = to_string(value);
-
-    string name = "";
-    switch (control & 0xF0)
-    {
-        case 0:
-            name = " Amplitude ";
-            break;
-        case 16:
-            name = " Modulator ";
-            break;
-        case 32:
-            name = " Frequency ";
-            break;
-        case 48:
-            name = " Unison ";
-            break;
-        case 64:
-            name = " Filter ";
-            break;
-        case 80:
-            name = " Modulator Amp ";
-            break;
-        case 96:
-            name = " Modulator Freq ";
-            break;
-        case 112:
-            name = " Modulator Osc ";
-            break;
-    }
-
-    string contstr = "";
-    switch (control)
-    {
-        case 0:
-            contstr = "Volume";
-            break;
-        case 1:
-            contstr = "Vel Sens";
-            break;
-        case 2:
-            contstr = "Panning";
-            break;
-        case 4:
-            contstr = "Minus";
-            break;
-        case 8:
-            contstr = "Enable Env";
-            break;
-        case 9:
-            contstr = "Enable LFO";
-            break;
-
-        case 16:
-            contstr = "Type";
-            break;
-        case 17:
-            contstr = "Extern Mod";
-            break;
-
-        case 32:
-            contstr = "Detune";
-            break;
-        case 33:
-            contstr = "Eq T";
-            break;
-        case 34:
-            contstr = "440Hz";
-            break;
-        case 35:
-            contstr = "Octave";
-            break;
-        case 36:
-            contstr = "Det type";
-            break;
-        case 37:
-            contstr = "Coarse Det";
-            break;
-        case 40:
-            contstr = "Enable Env";
-            break;
-        case 41:
-            contstr = "Enable LFO";
-            break;
-
-        case 48:
-            contstr = "Freq Spread";
-            break;
-        case 49:
-            contstr = "Phase Rnd";
-            break;
-        case 50:
-            contstr = "Stereo";
-            break;
-        case 51:
-            contstr = "Vibrato";
-            break;
-        case 52:
-            contstr = "Vib Speed";
-            break;
-        case 53:
-            contstr = "Size";
-            break;
-        case 54:
-            contstr = "Invert";
-            break;
-        case 56:
-            contstr = "Enable";
-            break;
-
-        case 64:
-            contstr = "Bypass Global";
-            break;
-        case 68:
-            contstr = "Enable";
-            break;
-        case 72:
-            contstr = "Enable Env";
-            break;
-        case 73:
-            contstr = "Enable LFO";
-            break;
-
-        case 80:
-            contstr = "Volume";
-            break;
-        case 81:
-            contstr = "V Sense";
-            break;
-        case 82:
-            contstr = "F Damp";
-            break;
-        case 88:
-            contstr = "Enable Env";
-            break;
-
-        case 96:
-            contstr = "Detune";
-            break;
-        case 99:
-            contstr = "Octave";
-            break;
-        case 100:
-            contstr = "Det type";
-            break;
-        case 101:
-            contstr = "Coarse Det";
-            break;
-        case 104:
-            contstr = "Enable Env";
-            break;
-
-        case 112:
-            contstr = " Phase";
-            break;
-        case 113:
-            contstr = " Source";
-            break;
-
-        case 128:
-            contstr = " Delay";
-            break;
-        case 129:
-            contstr = " Enable";
-            break;
-        case 130:
-            contstr = " Resonance Enable";
-            break;
-        case 136:
-            contstr = " Osc Phase";
-            break;
-        case 137:
-            contstr = " Osc Source";
-            break;
-        case 138:
-            contstr = " Sound type";
-            break;
-    }
-
-    Runtime.Log("Part " + to_string(part) + "  Kit " + to_string(kit) + "  AddSynth Voice " + to_string(engine & 0x1f) + name + contstr + " value " + actual);
-}
-
-
-void SynthEngine::commandSub(float value, unsigned char type, unsigned char control, unsigned char part, unsigned char kit, unsigned char insert)
-{
-    string actual;
-    if (type & 0x80)
-        actual = to_string((int)round(value));
-    else
-        actual = to_string(value);
-
-    if (insert == 6)
-    {
-        Runtime.Log("Part " + to_string(part) + "  Kit " + to_string(kit) + "  Subsynth Harmonic " + to_string(control) + " Amplitude value " + actual);
-        return;
-    }
-
-    if (insert == 7)
-    {
-        Runtime.Log("Part " + to_string(part) + "  Kit " + to_string(kit) + "  Subsynth Harmonic " + to_string(control) + " Bandwidth value " + actual);
-        return;
-    }
-
-    string name = "";
-    switch (control & 0x70)
-    {
-        case 0:
-            name = " Amplitude ";
-            break;
-        case 16:
-            name = " Bandwidth ";
-            break;
-        case 32:
-            name = " Frequency ";
-            break;
-        case 48:
-            name = " Overtones ";
-            break;
-        case 64:
-            name = " Filter ";
-            break;
-    }
-
-    string contstr = "";
-    switch (control)
-    {
-        case 0:
-            contstr = "Volume";
-            break;
-        case 1:
-            contstr = "Vel Sens";
-            break;
-        case 2:
-            contstr = "Panning";
-            break;
-        case 16:
-            contstr = "Bandwidth";
-            break;
-        case 17:
-            contstr = "Band Scale";
-            break;
-        case 18:
-            contstr = "Env Enab";
-            break;
-        case 32:
-            contstr = "Detune";
-            break;
-        case 33:
-            contstr = "Eq T";
-            break;
-        case 34:
-            contstr = "440Hz";
-            break;
-        case 35:
-            contstr = "Octave";
-            break;
-        case 36:
-            contstr = "Det type";
-            break;
-        case 37:
-            contstr = "Coarse Det";
-            break;
-        case 38:
-            contstr = "Env Ena";
-            break;
-        case 48:
-            contstr = "Par 1";
-            break;
-        case 49:
-            contstr = "Par 2";
-            break;
-        case 50:
-            contstr = "Force H";
-            break;
-        case 51:
-            contstr = "Position";
-            break;
-        case 64:
-            contstr = "Enable";
-            break;
-        case 80:
-            contstr = "Filt Stages";
-            break;
-        case 81:
-            contstr = "Mag Type";
-            break;
-        case 82:
-            contstr = "Start";
-            break;
-        case 96:
-            contstr = "Clear Harmonics";
-            break;
-        case 112:
-            contstr = "Stereo";
-            break;
-    }
-
-    Runtime.Log("Part " + to_string(part) + "  Kit " + to_string(kit) + "  SubSynth " + name + contstr + " value " + actual);
-}
-
-
-void SynthEngine::commandPad(float value, unsigned char type, unsigned char control, unsigned char part, unsigned char kit)
-{
-    string actual;
-    if (type & 0x80)
-        actual = to_string((int)round(value));
-    else
-        actual = to_string(value);
-
-    string name = "";
-    switch (control & 0x70)
-    {
-        case 0:
-            name = " Amplitude ";
-            break;
-        case 16:
-            name = " Bandwidth ";
-            break;
-        case 32:
-            name = " Frequency ";
-            break;
-        case 48:
-            name = " Overtones ";
-            break;
-        case 64:
-            name = " Harmonic Base ";
-            break;
-        case 80:
-            name = " Harmonic Samples ";
-            break;
-    }
-
-    string contstr = "";
-    switch (control)
-    {
-        case 0:
-            contstr = "Volume";
-            break;
-        case 1:
-            contstr = "Vel Sens";
-            break;
-        case 2:
-            contstr = "Panning";
-            break;
-
-        case 16:
-            contstr = "Bandwidth";
-            break;
-        case 17:
-            contstr = "Band Scale";
-            break;
-        case 19:
-            contstr = "Spect Mode";
-            break;
-
-        case 32:
-            contstr = "Detune";
-            break;
-        case 33:
-            contstr = "Eq T";
-            break;
-        case 34:
-            contstr = "440Hz";
-            break;
-        case 35:
-            contstr = "Octave";
-            break;
-        case 36:
-            contstr = "Det type";
-            break;
-        case 37:
-            contstr = "Coarse Det";
-            break;
-        case 38:
-            contstr = "Env Ena";
-            break;
-
-        case 48:
-            contstr = "Par 1";
-            break;
-        case 49:
-            contstr = "Par 2";
-            break;
-        case 50:
-            contstr = "Force H";
-            break;
-        case 51:
-            contstr = "Position";
-            break;
-
-        case 64:
-            contstr = "Width";
-            break;
-        case 65:
-            contstr = "Freq Mult";
-            break;
-        case 66:
-            contstr = "Str";
-            break;
-        case 67:
-            contstr = "S freq";
-            break;
-        case 68:
-            contstr = "Size";
-            break;
-        case 69:
-            contstr = "Type";
-            break;
-        case 70:
-            contstr = "Halves";
-            break;
-        case 71:
-            contstr = "Par 1";
-            break;
-        case 72:
-            contstr = "Par 2";
-            break;
-        case 73:
-            contstr = "Amp Mult";
-            break;
-        case 74:
-            contstr = "Amp Mode";
-            break;
-        case 75:
-            contstr = "Autoscale";
-            break;
-
-        case 80:
-            contstr = "Base";
-            break;
-        case 81:
-            contstr = "samp/Oct";
-            break;
-        case 82:
-            contstr = "Num Oct";
-            break;
-        case 83:
-            contstr = "Size";
-            break;
-
-        case 104:
-            contstr = "Apply Changes";
-            break;
-
-        case 112:
-            contstr = "Stereo";
-            break;
-
-        case 120:
-            contstr = "De Pop";
-            break;
-        case 121:
-            contstr = "Punch Strngth";
-            break;
-        case 122:
-            contstr = "Punch Time";
-            break;
-        case 123:
-            contstr = "Punch Strtch";
-            break;
-        case 124:
-            contstr = "Punch Vel";
-            break;
-    }
-
-    Runtime.Log("Part " + to_string(part) + "  Kit " + to_string(kit) + "  PadSynth " + name + contstr + " value " + actual);
-}
-
-
-void SynthEngine::commandOscillator(float value, unsigned char type, unsigned char control, unsigned char part, unsigned char kit, unsigned char engine, unsigned char insert)
-{
-    string actual;
-    if (type & 0x80)
-        actual = to_string((int)round(value));
-    else
-        actual = to_string(value);
-
-    string eng_name;
-    if (engine == 2)
-        eng_name = "  Padsysnth";
-    else
-    {
-        eng_name = "  Addsynth Voice " + to_string( engine & 0x3f);
-        if (engine & 0x40)
-            eng_name += " Modulator";
-    }
-
-    if (insert == 6)
-    {
-        Runtime.Log("Part " + to_string(part) + "  Kit " + to_string(kit) + eng_name + " Harmonic " + to_string(control) + " Amplitude value " + actual);
-        return;
-    }
-    else if(insert == 7)
-    {
-        Runtime.Log("Part " + to_string(part) + "  Kit " + to_string(kit) + eng_name + " Harmonic " + to_string(control) + " Phase value " + actual);
-        return;
-    }
-
-    string name = "";
-    switch (control & 0x70)
-    {
-        case 0:
-            name = " Oscillator";
-            break;
-        case 16:
-            name = " Base Funct";
-            break;
-        case 32:
-            name = " Base Mods";
-            break;
-        case 64:
-            name = " Harm Mods";
-            break;
-    }
-
-    string contstr;
-    switch (control)
-    {
-        case 0:
-            contstr = " Random";
-            break;
-        case 1:
-            contstr = " Mag Type";
-            break;
-        case 2:
-            contstr = " Harm Rnd";
-            break;
-        case 3:
-            contstr = " Harm Rnd Type";
-            break;
-
-        case 16:
-            contstr = " Par";
-            break;
-        case 17:
-            contstr = " Type";
-            break;
-        case 18:
-            contstr = " Mod Par 1";
-            break;
-        case 19:
-            contstr = " Mod Par 2";
-            break;
-        case 20:
-            contstr = " Mod Par 3";
-            break;
-        case 21:
-            contstr = " Mod Type";
-            break;
-
-        case 32:
-            contstr = " Osc Autoclear";
-            break;
-        case 33:
-            contstr = " Osc As Base";
-            break;
-
-        case 34:
-            contstr = " Waveshape Par";
-            break;
-        case 35:
-            contstr = " Waveshape Type";
-            break;
-
-        case 36:
-            contstr = " Osc Filt Par 1";
-            break;
-        case 37:
-            contstr = " Osc Filt Par 2";
-            break;
-        case 38:
-            contstr = " Osc Filt B4 Waveshape";
-            break;
-        case 39:
-            contstr = " Osc Filt Type";
-            break;
-
-        case 40:
-            contstr = " Osc Mod Par 1";
-            break;
-        case 41:
-            contstr = " Osc Mod Par 2";
-            break;
-        case 42:
-            contstr = " Osc Mod Par 3";
-            break;
-        case 43:
-            contstr = " Osc Mod Type";
-            break;
-
-        case 44:
-            contstr = " Osc Spect Par";
-            break;
-        case 45:
-            contstr = " Osc Spect Type";
-            break;
-
-        case 64:
-            contstr = " Shift";
-            break;
-        case 65:
-            contstr = " Reset";
-            break;
-        case 66:
-            contstr = " B4 Waveshape & Filt";
-            break;
-
-        case 67:
-            contstr = " Adapt Param";
-            break;
-        case 68:
-            contstr = " Adapt Base Freq";
-            break;
-        case 69:
-            contstr = " Adapt Power";
-            break;
-        case 70:
-            contstr = " Adapt Type";
-            break;
-
-        case 96:
-            contstr = " Clear Harmonics";
-            break;
-        case 97:
-            contstr = " Conv To Sine";
-            break;
-
-        case 104:
-            contstr = " Apply Changes";
-            break;
-    }
-
-    Runtime.Log("Part " + to_string(part) + "  Kit " + to_string(kit) + eng_name + name + contstr + "  value " + actual);
-
-}
-
-
-void SynthEngine::commandResonance(float value, unsigned char type, unsigned char control, unsigned char part, unsigned char kit, unsigned char engine, unsigned char insert)
-{
-    string actual;
-    if (type & 0x80)
-        actual = to_string((int)round(value));
-    else
-        actual = to_string(value);
-
-    string name;
-    if (engine == 0)
-        name = "  AddSynth";
-    else
-        name = "  PadSynth";
-
-    if (insert == 9)
-    {
-        Runtime.Log("Part " + to_string(part) + "  Kit " + to_string(kit) + name + " Resonance Point " + to_string(control) + "  value " + actual);
-        return;
-    }
-
-    string contstr;
-    switch (control)
-    {
-        case 0:
-            contstr = "Max dB";
-            break;
-        case 1:
-            contstr = "Centre Freq";
-            break;
-        case 2:
-            contstr = "Octaves";
-            break;
-
-        case 8:
-            contstr = "Enable";
-            break;
-
-        case 10:
-            contstr = "Random";
-            break;
-
-        case 20:
-            contstr = "Interpolate Peaks";
-            break;
-        case 21:
-            contstr = "Protect Fundamental";
-            break;
-
-        case 96:
-            contstr = "Clear";
-            break;
-        case 97:
-            contstr = "Smooth";
-            break;
-
-        case 104:
-            contstr = "Apply Changes";
-            break;
-    }
-
-    Runtime.Log("Part " + to_string(part) + "  Kit " + to_string(kit) + name + " Resonance " + contstr + "  value " + actual);
-}
-
-
-void SynthEngine::commandLFO(float value, unsigned char type, unsigned char control, unsigned char part, unsigned char kit, unsigned char engine, unsigned char insert, unsigned char parameter)
-{
-    string actual;
-    if (type & 0x80)
-        actual = to_string((int)round(value));
-    else
-        actual = to_string(value);
-
-    string name;
-    if (engine == 0)
-        name = "  AddSynth";
-    else if (engine == 2)
-        name = "  PadSynth";
-    else if (engine >= 0x80)
-        name = "  AddSynth Voice " + to_string(engine & 0x3f);
-
-    string lfo;
-    switch (parameter)
-    {
-        case 0:
-            lfo = "  Amp";
-            break;
-        case 1:
-            lfo = "  Freq";
-            break;
-        case 2:
-            lfo = "  Filt";
-            break;
-    }
-
-    string contstr;
-    switch (control)
-    {
-        case 0:
-            contstr = "Freq";
-            break;
-        case 1:
-            contstr = "Depth";
-            break;
-        case 2:
-            contstr = "Delay";
-            break;
-        case 3:
-            contstr = "Start";
-            break;
-        case 4:
-            contstr = "AmpRand";
-            break;
-        case 5:
-            contstr = "Type";
-            break;
-        case 6:
-            contstr = "Cont";
-            break;
-        case 7:
-            contstr = "FreqRand";
-            break;
-        case 8:
-            contstr = "Stretch";
-            break;
-    }
-
-    Runtime.Log("Part " + to_string(part) + "  Kit " + to_string(kit) + name + lfo + " LFO  " + contstr + " value " + actual);
-}
-
-
-void SynthEngine::commandFilter(float value, unsigned char type, unsigned char control, unsigned char part, unsigned char kit, unsigned char engine, unsigned char insert)
-{
-    string actual;
-    if (type & 0x80)
-        actual = to_string((int)round(value));
-    else
-        actual = to_string(value);
-
-    string name;
-    if (kit >= 0x80)
-    {
-        string efftype;
-        switch (kit & 0xf)
-        {
-            case 0:
-                efftype = " NO Effect";
-                break;
-            case 1:
-                efftype = " Reverb";
-                break;
-            case 2:
-                efftype = " Echo";
-                break;
-            case 3:
-                efftype = " Chorus";
-                break;
-            case 4:
-                efftype = " Phaser";
-                break;
-            case 5:
-                efftype = " AlienWah";
-                break;
-            case 6:
-                efftype = " Distortion";
-                break;
-            case 7:
-                efftype = " EQ";
-                break;
-            case 8:
-                efftype = " DynFilter";
-                break;
-        }
-
-        if (part == 0xf1)
-            name = "System";
-        else if (part == 0xf2)
-            name = "Insert";
-        else name = "Part " + to_string(part);
-        name += " Effect " + to_string(engine); // this is the effect number
-        Runtime.Log(name + efftype + " ~ Filter Parameter " + to_string(control) + "  Value " + actual);
-    return;
-    }
-
-    if (engine == 0)
-        name = "  AddSynth";
-    else if (engine == 1)
-        name = "  SubSynth";
-    else if (engine == 2)
-        name = "  PadSynth";
-    else if (engine >= 0x80)
-        name = "  Adsynth Voice " + to_string(engine & 0x3f);
-
-    string contstr;
-    switch (control)
-    {
-        case 0:
-            contstr = "C_Freq";
-            break;
-        case 1:
-            contstr = "Q";
-            break;
-        case 3:
-            contstr = "VsensA";
-            break;
-        case 4:
-            contstr = "Vsens";
-            break;
-        case 2:
-            contstr = "FreqTr";
-            break;
-        case 5:
-            contstr = "gain";
-            break;
-        case 6:
-            contstr = "Stages";
-            break;
-        case 7:
-            contstr = "Filt Type";
-            break;
-        case 8:
-            contstr = "An Type";
-            break;
-        case 9:
-            contstr = "St Type";
-            break;
-
-        case 16:
-            contstr = "Form Fr Sl";
-            break;
-        case 17:
-            contstr = "Form Vw Cl";
-            break;
-        case 18:
-            contstr = "Form Freq";
-            break;
-        case 19:
-            contstr = "Form Q";
-            break;
-        case 20:
-            contstr = "Form Amp";
-            break;
-        case 21:
-            contstr = "Form Stretch";
-            break;
-        case 22:
-            contstr = "Form Cent Freq";
-            break;
-        case 23:
-            contstr = "Form Octave";
-            break;
-
-        case 32:
-            contstr = "Formants";
-            break;
-        case 33:
-            contstr = "Vowel Num";
-            break;
-        case 34:
-            contstr = "Formant Num";
-            break;
-        case 35:
-            contstr = "Seq Size";
-            break;
-        case 36:
-            contstr = "Seq Pos";
-            break;
-        case 37:
-            contstr = "Seq Vowel";
-            break;
-        case 38:
-            contstr = "Neg Input";
-            break;
-    }
-
-    Runtime.Log("Part " + to_string(part) + "  Kit " + to_string(kit) + name + " Filter  " + contstr + " value " + actual);
-}
-
-
-void SynthEngine::commandEnvelope(float value, unsigned char type, unsigned char control, unsigned char part, unsigned char kit, unsigned char engine, unsigned char insert, unsigned char parameter)
-{
-    string actual;
-    if (type & 0x80)
-        actual = to_string((int)round(value));
-    else
-        actual = to_string(value);
-
-    string name;
-    if (engine == 0)
-        name = "  AddSynth";
-    else if (engine == 1)
-        name = "  SubSynth";
-    else if (engine == 2)
-        name = "  PadSynth";
-    else if (engine >= 0x80)
-    {
-        name = "  Adsynth Voice ";
-        if (engine >= 0xC0)
-            name += "Modulator ";
-        name += to_string(engine & 0x3f);
-    }
-
-    string env;
-    switch(parameter)
-    {
-        case 0:
-            env = "  Amp";
-            break;
-        case 1:
-            env = "  Freq";
-            break;
-        case 2:
-            env = "  Filt";
-            break;
-    }
-
-
-    if (insert == 3)
-    {
-        Runtime.Log("Part " + to_string(part) + "  Kit " + to_string(kit) + name  + env + " Env Freemode Control " + to_string(control) + "  X value " + actual);
-        return;
-    }
-    if (insert == 4)
-    {
-        Runtime.Log("Part " + to_string(part) + "  Kit " + to_string(kit) + name  + env + " Env Freemode Control " +  to_string(control) + "  Y value " + actual);
-        return;
-    }
-
-    string contstr;
-    switch (control)
-    {
-        case 0:
-            contstr = "A val";
-            break;
-        case 1:
-            contstr = "A dt";
-            break;
-        case 2:
-            contstr = "D val";
-            break;
-        case 3:
-            contstr = "D dt";
-            break;
-        case 4:
-            contstr = "S val";
-            break;
-        case 5:
-            contstr = "R dt";
-            break;
-        case 6:
-            contstr = "R val";
-            break;
-        case 7:
-            contstr = "Stretch";
-            break;
-
-        case 16:
-            contstr = "frcR";
-            break;
-        case 17:
-            contstr = "L";
-            break;
-
-        case 24:
-            contstr = "Edit";
-            break;
-
-        case 32:
-            contstr = "Freemode";
-            break;
-        case 33:
-            contstr = "Add Point";
-            break;
-        case 34:
-            contstr = "Del Point";
-            break;
-        case 35:
-            contstr = "Sust";
-            break;
-        case 39:
-            contstr = "Stretch";
-            break;
-
-        case 48:
-            contstr = "frcR";
-            break;
-        case 49:
-            contstr = "L";
-            break;
-    }
-
-    Runtime.Log("Part " + to_string(part) + "  Kit " + to_string(kit) + name  + env + " Env  " + contstr + " value " + actual);
-}
-
-
-void SynthEngine::commandSysIns(float value, unsigned char type, unsigned char control, unsigned char part, unsigned char engine, unsigned char insert)
-{
-    string actual;
-    if (type & 0x80)
-        actual = to_string((int)round(value));
-    else
-        actual = to_string(value);
-
-    string name;
-    if (part == 0xf1)
-        name = "System ";
-    else
-        name = "Insert ";
-
-    string contstr;
-    string second;
-    if (insert == 0xff)
-    {
-        second = "";
-        switch (control)
-        {
-            case 0:
-                contstr = "Number ";
-                break;
-            case 1:
-                contstr = to_string(engine) + " Type ";
-                break;
-            case 2:
-                contstr = to_string(engine) + " To ";
-                break;
-        }
-        contstr = "Effect " + contstr + actual;
-    }
-    else
-    {
-        contstr = "From Effect " + to_string(engine);
-        second = " To Effect " + to_string(control)  + "  Value " + actual;
-    }
-
-    Runtime.Log(name  + contstr + second);
-}
-
-
-void SynthEngine::commandEffects(float value, unsigned char type, unsigned char control, unsigned char part, unsigned char kit, unsigned char engine)
-{
-    string actual;
-    if (type & 0x80)
-        actual = to_string((int)round(value));
-    else
-        actual = to_string(value);
-
-    string name;
-    if (part == 0xf1)
-        name = "System";
-    else if (part == 0xf2)
-        name = "Insert";
-    else
-        name = "Part " + to_string(part);
-    name += " Effect " + to_string(engine);
-
-    string efftype;
-    switch (kit & 0xf)
-    {
-        case 0:
-            efftype = " NO Effect";
-            break;
-        case 1:
-            efftype = " Reverb";
-            break;
-        case 2:
-            efftype = " Echo";
-            break;
-        case 3:
-            efftype = " Chorus";
-            break;
-        case 4:
-            efftype = " Phaser";
-            break;
-        case 5:
-            efftype = " AlienWah";
-            break;
-        case 6:
-            efftype = " Distortion";
-            break;
-        case 7:
-            efftype = " EQ";
-            break;
-        case 8:
-            efftype = " DynFilter";
-            break;
-    }
-
-    string contstr = "  Control " + to_string(control);
-
-    Runtime.Log(name + efftype + contstr + "  Value " + actual);
-}
-
-
-
+/*
+ * If we want to change a *specific* part regardless of what MIDI chanel it
+ * is listening to we use 0 - 63 ORed with 128
+ *
+ * Values 0 - 15 will change 'standard' parts listening to that channel
+ */
 void SynthEngine::SetProgram(unsigned char chan, unsigned short pgm)
 {
     bool partOK = true;
@@ -2423,7 +908,7 @@ void SynthEngine::SetProgram(unsigned char chan, unsigned short pgm)
                 // we don't want upper parts (16 - 63) activiated!
                 if (chan == part[npart]->Prcvchn)
                 {
-                    // all listening parts must succeed
+                    // ensure all listening parts succeed
                     if (!SetProgramToPart(npart, pgm, fname))
                     {
                         partOK = false;
@@ -2448,30 +933,54 @@ void SynthEngine::SetProgram(unsigned char chan, unsigned short pgm)
 bool SynthEngine::SetProgramToPart(int npart, int pgm, string fname)
 {
     bool loadOK = false;
-    int enablestate;
+    unsigned char enablestate;
+    string loaded;
+
+    struct timeval tv1, tv2;
+    gettimeofday(&tv1, NULL);
+
     sem_wait (&partlock);
 
     if (Runtime.enable_part_on_voice_load)
-        enablestate = 1;
+        enablestate = 1; // always on
     else
-        enablestate = partonoffRead(npart);
-    partonoffWrite(npart, 0);
+        enablestate = 2; // on of it was before
+    partonoffWrite(npart, -1); // more off than before :)
     if (part[npart]->loadXMLinstrument(fname))
     {
         partonoffWrite(npart, enablestate); // must be here to update gui
         loadOK = true;
         // show file instead of program if we got here from Instruments -> Load External...
-        Runtime.Log("Loaded " +
-                    ((pgm == -1) ? fname : asString(pgm) + " \"" + bank.getname(pgm) + "\"")
-                    + " to Part " + asString(npart));
-        if (Runtime.showGui && guiMaster && guiMaster->partui
-                            && guiMaster->partui->instrumentlabel
-                            && guiMaster->partui->part)
-            GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePartProgram, npart);
+        loaded = "Loaded " +
+                    ((pgm == -1) ? fname : to_string(pgm + 1)
+                    + " \"" + bank.getname(pgm) + "\"")
+                    + " to Part " + to_string(npart + 1);
+        if (Runtime.showTimes)
+        {
+            gettimeofday(&tv2, NULL);
+            if (tv1.tv_usec > tv2.tv_usec)
+            {
+                tv2.tv_sec--;
+                tv2.tv_usec += 1000000;
+            }
+            int actual = ((tv2.tv_sec - tv1.tv_sec) *1000 + (tv2.tv_usec - tv1.tv_usec)/ 1000.0f) + 0.5f;
+            loaded += ("  Time " + to_string(actual) + "mS");
+        }
     }
     else
         partonoffWrite(npart, enablestate); // also here to restore failed load state.
+
     sem_post (&partlock);
+
+    if (!loadOK)
+        GuiThreadMsg::sendMessage(this, GuiThreadMsg::GuiAlert,miscMsgPush("Could not load " + fname));
+    else
+    {
+        if (part[npart]->Pname == "Simple Sound")
+            GuiThreadMsg::sendMessage(this, GuiThreadMsg::GuiAlert,miscMsgPush("Instrument is called 'Simple Sound', Yoshimi's basic sound name. You should change this if you wish to re-save."));
+        Runtime.Log(loaded);
+        GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePartProgram, npart);
+    }
     return loadOK;
 }
 
@@ -2489,10 +998,7 @@ void SynthEngine::SetPartChan(unsigned char npart, unsigned char nchan)
          * as will using the GUI controls.
          */
         part[npart]->Prcvchn =  nchan;
-        if (Runtime.showGui && guiMaster && guiMaster->partui
-                            && guiMaster->partui->instrumentlabel
-                            && guiMaster->partui->part)
-            GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePartProgram, npart);
+        GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePartProgram, npart);
     }
 }
 
@@ -2536,6 +1042,7 @@ void SynthEngine::SetPartShift(unsigned char npart, unsigned char shift)
     else if(shift > MAX_KEY_SHIFT + 64)
         shift = MAX_KEY_SHIFT + 64;
     part[npart]->Pkeyshift = shift;
+    setPartMap(npart);
     Runtime.Log("Part " +asString((int) npart) + "  key shift set to " + asString(shift - 64));
     GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePart, 0);
 }
@@ -2633,17 +1140,22 @@ void SynthEngine::cliOutput(list<string>& msg_buf, unsigned int lines)
 void SynthEngine::ListPaths(list<string>& msg_buf)
 {
     string label;
-    int idx;
+    string prefix;
+    unsigned int idx;
     msg_buf.push_back("Root Paths");
 
     for (idx = 0; idx < MAX_BANK_ROOT_DIRS; ++ idx)
     {
         if (bank.roots.count(idx) > 0 && !bank.roots [idx].path.empty())
         {
+            if (idx == bank.getCurrentRootID())
+                prefix = " *";
+            else
+                prefix = "  ";
             label = bank.roots [idx].path;
             if (label.at(label.size() - 1) == '/')
                 label = label.substr(0, label.size() - 1);
-            msg_buf.push_back("    ID " + asString(idx) + "     " + label);
+            msg_buf.push_back(prefix + " ID " + asString(idx) + "     " + label);
         }
     }
 }
@@ -2652,7 +1164,7 @@ void SynthEngine::ListPaths(list<string>& msg_buf)
 void SynthEngine::ListBanks(int rootNum, list<string>& msg_buf)
 {
     string label;
-
+    string prefix;
     if (rootNum < 0 || rootNum >= MAX_BANK_ROOT_DIRS)
         rootNum = bank.currentRootID;
     if (bank.roots.count(rootNum) > 0
@@ -2663,11 +1175,17 @@ void SynthEngine::ListBanks(int rootNum, list<string>& msg_buf)
             label = label.substr(0, label.size() - 1);
         msg_buf.push_back("Banks in Root ID " + asString(rootNum));
         msg_buf.push_back("    " + label);
-        for (int idx = 0; idx < MAX_BANKS_IN_ROOT; ++ idx)
+        for (unsigned int idx = 0; idx < MAX_BANKS_IN_ROOT; ++ idx)
         {
-            if (!bank.roots [rootNum].banks [idx].dirname.empty())
-                msg_buf.push_back("    ID " + asString(idx) + "    "
+            if (bank.roots [rootNum].banks.count(idx))
+            {
+                if (idx == bank.getCurrentBankID())
+                    prefix = " *";
+                else
+                    prefix = "  ";
+                msg_buf.push_back(prefix + " ID " + asString(idx) + "    "
                                 + bank.roots [rootNum].banks [idx].dirname);
+            }
         }
     }
     else
@@ -2705,7 +1223,7 @@ void SynthEngine::ListInstruments(int bankNum, list<string>& msg_buf)
                         suffix += "S";
                     if (bank.roots [root].banks [bankNum].instruments [idx].PADsynth_used)
                         suffix += "P";
-                    msg_buf.push_back("    ID " + asString(idx) + "    "
+                    msg_buf.push_back("    ID " + asString(idx + 1) + "    "
                                     + bank.roots [root].banks [bankNum].instruments [idx].name
                                     + "  (" + suffix + ")");
                 }
@@ -2731,7 +1249,7 @@ void SynthEngine::ListCurrentParts(list<string>& msg_buf)
     {
         if ((part[npart]->Pname) != "Simple Sound" || (partonoffRead(npart)))
         {
-            name = "  " + asString(npart);
+            name = "  " + asString(npart + 1);
             dest = part[npart]->Paudiodest;
             if (!partonoffRead(npart) || npart >= avail)
                 name += " -";
@@ -2782,9 +1300,9 @@ bool SynthEngine::SingleVector(list<string>& msg_buf, int chan)
         if (Xfeatures & 8)
             Xtext += " 4";
     }
-    msg_buf.push_back("Channel " + asString(chan));
+    msg_buf.push_back("Channel " + asString(chan + 1));
     msg_buf.push_back("  X CC = " + asString((int)  Runtime.nrpndata.vectorXaxis[chan]) + ",  " + Xtext);
-    msg_buf.push_back("    L = " + part[chan]->Pname + ",  R = " + part[chan + 16]->Pname);
+    msg_buf.push_back("  L = " + part[chan]->Pname + ",  R = " + part[chan + 16]->Pname);
 
     if (Runtime.nrpndata.vectorYaxis[chan] > 0x7f
         || Runtime.NumAvailableParts < NUM_MIDI_CHANNELS * 4)
@@ -2807,7 +1325,7 @@ bool SynthEngine::SingleVector(list<string>& msg_buf, int chan)
                 Ytext += " 4";
         }
         msg_buf.push_back("  Y CC = " + asString((int) Runtime.nrpndata.vectorYaxis[chan]) + ",  " + Ytext);
-        msg_buf.push_back("    U = " + part[chan + 32]->Pname + ",  D = " + part[chan + 48]->Pname);
+        msg_buf.push_back("  U = " + part[chan + 32]->Pname + ",  D = " + part[chan + 48]->Pname);
     }
     return true;
 }
@@ -2915,17 +1433,27 @@ void SynthEngine::ListSettings(list<string>& msg_buf)
     }
     else
         msg_buf.push_back("  Reports sent to stderr");
+    if (Runtime.loadDefaultState)
+        msg_buf.push_back("  Autostate on");
+    else
+        msg_buf.push_back("  Autostate off");
+
+    if (Runtime.showTimes)
+        msg_buf.push_back("  Times on");
+    else
+        msg_buf.push_back("  Times off");
 }
 
 
-/* Provides a way of setting dynamic system variables
+/* Provides a way of setting/reading dynamic system variables
  * from sources other than the gui
  */
-void SynthEngine::SetSystemValue(int type, int value)
+int SynthEngine::SetSystemValue(int type, int value)
 {
     list<string> msg;
     string label;
     label = "";
+    int pos;
 
     switch (type)
     {
@@ -2935,6 +1463,7 @@ void SynthEngine::SetSystemValue(int type, int value)
             else if (value < MIN_KEY_SHIFT + 64) // 3 octaves is enough for anybody :)
                 value = MIN_KEY_SHIFT + 64;
             setPkeyshift(value);
+            setAllPartMaps();
             GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateMaster, 0);
             Runtime.Log("Master key shift set to " + asString(value - 64));
             break;
@@ -2962,7 +1491,7 @@ void SynthEngine::SetSystemValue(int type, int value)
         case 78:
         case 79:
             for (int npart = 0; npart < Runtime.NumAvailableParts; ++ npart)
-                if (part[npart]->Penabled && part[npart]->Prcvchn == (type - 64))
+                if (partonoffRead(npart) && part[npart]->Prcvchn == (type - 64))
                     SetPartShift(npart, value);
             break;
 
@@ -2977,10 +1506,66 @@ void SynthEngine::SetSystemValue(int type, int value)
             else
             {
                 Runtime.toConsole = false;
-                Runtime.Log("Sending reports to stderr");
+                Runtime.Log("Sending reports to stdout");
             }
             GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateMaster, 0);
             GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateConfig, 1);
+            break;
+
+        case 101:
+            if (value > 63)
+                Runtime.loadDefaultState = true;
+            else
+                Runtime.loadDefaultState = false;
+            GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateConfig, 5);
+            break;
+
+        case 102:
+            if (value > 63)
+            {
+                Runtime.showTimes = true;
+                label = "Enabled";
+            }
+            else
+            {
+                Runtime.showTimes = false;
+                label = "Disabled";
+            }
+            Runtime.Log("Part load time " + label);
+            GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateConfig, 5);
+            break;
+
+        case 103:
+            if (value > 63)
+                Runtime.hideErrors = true;
+            else
+                Runtime.hideErrors = false;
+            GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateConfig, 5);
+
+        case 106:
+        {
+            pos = 0;
+            vector<string> &listtype = *getHistory(6);
+            vector<string>::iterator it = listtype.begin();
+            while (it != listtype.end() && pos != value)
+            {
+                ++ it;
+                ++ pos;
+            }
+            if (it == listtype.end())
+                return -1;
+            else
+                return miscMsgPush(*it);
+        }
+
+        case 107: // list midi learned lines
+            if (value <= 0)
+                midilearn.listLine(-value);
+            else
+            {
+                midilearn.listAll(msg);
+                cliOutput(msg, value);
+            }
             break;
 
         case 108: // list vector parameters
@@ -3121,22 +1706,49 @@ void SynthEngine::SetSystemValue(int type, int value)
             Runtime.Log("Settings saved");
             break;
 
-        case 128: // shortform NRPN channel switch
-
-            if (value >= NUM_MIDI_PARTS) // single row
+        case 128: // channel switch
+            if (Runtime.channelSwitchType == 1 || Runtime.channelSwitchType == 3) // single row / loop
             {
-                int start = value & 0xc;
-                value &= 0x3f;
-                for (int i = start; i < start + 4; ++i)
+                if (Runtime.channelSwitchType == 1)
                 {
-                    if (i != value)
-                        part[i]->Prcvchn = start | NUM_MIDI_CHANNELS;
+                    if (value >= NUM_MIDI_CHANNELS)
+                        return 1; // out of range
+                }
+                else if (value > 0)
+                    value = (Runtime.channelSwitchValue + 1) % NUM_MIDI_CHANNELS; // loop
+                else
+                    return 0; // do nothing if it's a switch off
+
+                Runtime.channelSwitchValue = value;
+                for (int ch = 0; ch < NUM_MIDI_CHANNELS; ++ch)
+                {
+                    bool isVector = Runtime.nrpndata.vectorEnabled[ch];
+                    if (ch != value)
+                    {
+                        part[ch]->Prcvchn = NUM_MIDI_CHANNELS;
+                        if (isVector)
+                        {
+                            part[ch + NUM_MIDI_CHANNELS]->Prcvchn = NUM_MIDI_CHANNELS;
+                            part[ch + NUM_MIDI_CHANNELS * 2]->Prcvchn = NUM_MIDI_CHANNELS;
+                            part[ch + NUM_MIDI_CHANNELS * 3]->Prcvchn = NUM_MIDI_CHANNELS;
+                        }
+                    }
                     else
-                        part[i]->Prcvchn = start;
+                    {
+                        part[ch]->Prcvchn = 0;
+                        if (isVector)
+                        {
+                            part[ch + NUM_MIDI_CHANNELS]->Prcvchn = 0;
+                            part[ch + NUM_MIDI_CHANNELS * 2]->Prcvchn = 0;
+                            part[ch + NUM_MIDI_CHANNELS * 3]->Prcvchn = 0;
+                        }
+                    }
                 }
             }
-            else // columns
+            else if (Runtime.channelSwitchType == 2) // columns
             {
+                if (value >= NUM_MIDI_PARTS)
+                    return 1; // out of range
                 int chan = value & 0xf;
                 for (int i = chan; i < NUM_MIDI_PARTS; i += NUM_MIDI_CHANNELS)
                 {
@@ -3146,19 +1758,23 @@ void SynthEngine::SetSystemValue(int type, int value)
                        part[i]->Prcvchn = chan;
                 }
             }
+            else
+                return 2; // unrecognised
             GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePart,0);
             break;
     }
+    return 0;
 }
 
 
-void SynthEngine::writeRBP(char type, char data0, char data1)
+void SynthEngine::writeRBP(char type, char data0, char data1, char data2)
 {
     struct RBP_data block;
     unsigned int writesize = sizeof(RBP_data);
     block.data[0] = type;
     block.data[1] = data0;
     block.data[2] = data1;
+    block.data[3] = data2;
     char *point = (char*)&block;
     unsigned int towrite = writesize;
     unsigned int wrote = 0;
@@ -3269,7 +1885,7 @@ void SynthEngine::vectorSet(int dHigh, unsigned char chan, int par)
             Runtime.nrpndata.vectorXcc2[chan] = C_panning;
             Runtime.nrpndata.vectorXcc4[chan] = C_filtercutoff;
             Runtime.nrpndata.vectorXcc8[chan] = C_modwheel;
-            Runtime.Log("Vector " + asString((int) chan) + " X CC set to " + asString(par));
+            //Runtime.Log("Vector " + asString((int) chan) + " X CC set to " + asString(par));
             break;
 
         case 1:
@@ -3283,7 +1899,7 @@ void SynthEngine::vectorSet(int dHigh, unsigned char chan, int par)
                 Runtime.nrpndata.vectorYcc2[chan] = C_panning;
                 Runtime.nrpndata.vectorYcc4[chan] = C_filtercutoff;
                 Runtime.nrpndata.vectorYcc8[chan] = C_modwheel;
-                Runtime.Log("Vector " + asString((int) chan) + " Y CC set to " + asString(par));
+                //Runtime.Log("Vector " + asString(int(chan) + 1) + " Y CC set to " + asString(par));
             }
             break;
 
@@ -3300,27 +1916,20 @@ void SynthEngine::vectorSet(int dHigh, unsigned char chan, int par)
             }
             break;
 
-        /*
-         * If this came from the command line thread
-         * we don't need to worry about blocking
-         * with these program changes as it is only
-         * the command line thread that's blocked.
-         * The MIDI NRPN thread deals with them separately.
-         */
         case 4:
-            SetProgram(chan | 0x80, par);
+            writeRBP(3, chan | 0x80, par);
             break;
 
         case 5:
-            SetProgram(chan | 0x90, par);
+            writeRBP(3, chan | 0x90, par);
             break;
 
         case 6:
-            SetProgram(chan | 0xa0, par);
+            writeRBP(3, chan | 0xa0, par);
             break;
 
         case 7:
-            SetProgram(chan | 0xb0, par);
+            writeRBP(3, chan | 0xb0, par);
             break;
 
         case 8:
@@ -3359,7 +1968,7 @@ void SynthEngine::vectorSet(int dHigh, unsigned char chan, int par)
             Runtime.nrpndata.vectorYaxis[chan] = 0xff;
             Runtime.nrpndata.vectorXfeatures[chan] = 0;
             Runtime.nrpndata.vectorYfeatures[chan] = 0;
-            Runtime.Log("Channel " + asString((int) chan) + " vector control disabled");
+            Runtime.Log("Channel " + asString(int(chan) + 1) + " vector control disabled");
             break;
     }
 }
@@ -3389,6 +1998,7 @@ void SynthEngine::resetAll(void)
     ClearNRPNs();
     actionLock(unlock);
     Runtime.Log("All dynamic values set to defaults.");
+    GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateMaster, 1);
 }
 
 
@@ -3405,27 +2015,46 @@ void SynthEngine::partonoffWrite(int npart, int what)
 {
     if (npart >= Runtime.NumAvailableParts)
         return;
-
-    if (what)
+    unsigned char original = part[npart]->Penabled;
+    unsigned char tmp = original;
+    switch (what)
     {
-        VUpeak.values.parts[npart] = 1e-9f;
-        part[npart]->Penabled = 1;
+        case 0: // always off
+            tmp = 0;
+            break;
+        case 1: // always on
+            tmp = 1;
+            break;
+        case -1: // further from on
+            tmp -= 1;
+            break;
+        case 2:
+            if (tmp != 1) // nearer to on
+                tmp += 1;
+            break;
+        default:
+            return;
     }
-    else
-    {   // disabled part
-        part[npart]->Penabled = 0;
+
+    part[npart]->Penabled = tmp;
+    if (tmp == 1 && original != 1) // enable if it wasn't already on
+        VUpeak.values.parts[npart] = 1e-9f;
+    else if (tmp != 1 && original == 1) // disable if it wasn't already off
+    {
         part[npart]->cleanup();
         for (int nefx = 0; nefx < NUM_INS_EFX; ++nefx)
+        {
             if (Pinsparts[nefx] == npart)
                 insefx[nefx]->cleanup();
+        }
         VUpeak.values.parts[npart] = -0.2;
     }
 }
 
 
-bool SynthEngine::partonoffRead(int npart)
+char SynthEngine::partonoffRead(int npart)
 {
-    return (part[npart]->Penabled != 0);
+    return (part[npart]->Penabled == 1);
 }
 
 
@@ -3446,11 +2075,12 @@ int SynthEngine::MasterAudio(float *outl [NUM_MIDI_PARTS + 1], float *outr [NUM_
         p_buffersize_f = p_buffersize;
     }
 
-    int npart;
-
     memset(mainL, 0, p_bufferbytes);
     memset(mainR, 0, p_bufferbytes);
 
+    interchange.mediate();
+
+    int npart;
     if (isMuted())
     {
         for (npart = 0; npart < (Runtime.NumAvailableParts); ++npart)
@@ -3469,13 +2099,17 @@ int SynthEngine::MasterAudio(float *outl [NUM_MIDI_PARTS + 1], float *outr [NUM_
  */
     else
     {
+#ifdef MUTEX
         actionLock(lock);
-
+#endif
         // Compute part samples and store them ->partoutl,partoutr
+        char partLocal[NUM_MIDI_PARTS]; // isolates loop from possible change
         for (npart = 0; npart < Runtime.NumAvailableParts; ++npart)
-            if (partonoffRead(npart))
+        {
+            partLocal[npart] = partonoffRead(npart);
+            if (partLocal[npart])
                 part[npart]->ComputePartSmps();
-
+        }
         // Insertion effects
         int nefx;
         for (nefx = 0; nefx < NUM_INS_EFX; ++nefx)
@@ -3483,7 +2117,7 @@ int SynthEngine::MasterAudio(float *outl [NUM_MIDI_PARTS + 1], float *outr [NUM_
             if (Pinsparts[nefx] >= 0)
             {
                 int efxpart = Pinsparts[nefx];
-                if (part[efxpart]->Penabled)
+                if (partonoffRead(efxpart))
                     insefx[nefx]->out(part[efxpart]->partoutl, part[efxpart]->partoutr);
             }
         }
@@ -3491,33 +2125,24 @@ int SynthEngine::MasterAudio(float *outl [NUM_MIDI_PARTS + 1], float *outr [NUM_
         // Apply the part volumes and pannings (after insertion effects)
         for (npart = 0; npart < Runtime.NumAvailableParts; ++npart)
         {
-            if (!partonoffRead(npart))
+            if (!partLocal[npart])
                 continue;
 
-            float oldvol_l = part[npart]->oldvolumel;
-            float oldvol_r = part[npart]->oldvolumer;
-            float newvol_l = part[npart]->pannedVolLeft();
-            float newvol_r = part[npart]->pannedVolRight();
-            if (aboveAmplitudeThreshold(oldvol_l, newvol_l) || aboveAmplitudeThreshold(oldvol_r, newvol_r))
-            {   // the volume or the panning has changed and needs interpolation
-                for (int i = 0; i < p_buffersize; ++i)
-                {
-                    float vol_l = interpolateAmplitude(oldvol_l, newvol_l, i, p_buffersize);
-                    float vol_r = interpolateAmplitude(oldvol_r, newvol_r, i, p_buffersize);
-                    part[npart]->partoutl[i] *= vol_l;
-                    part[npart]->partoutr[i] *= vol_r;
-                }
-                part[npart]->oldvolumel = newvol_l;
-                part[npart]->oldvolumer = newvol_r;
-            }
-            else
+            float Step = ControlStep;
+            for (int i = 0; i < p_buffersize; ++i)
             {
-                for (int i = 0; i < p_buffersize; ++i)
-                {   // the volume did not change
-                    part[npart]->partoutl[i] *= newvol_l;
-                    part[npart]->partoutr[i] *= newvol_r;
-                }
+                if (part[npart]->Ppanning - part[npart]->TransPanning > Step)
+                    part[npart]->checkPanning(Step);
+                else if (part[npart]->TransPanning - part[npart]->Ppanning > Step)
+                    part[npart]->checkPanning(-Step);
+                if (part[npart]->Pvolume - part[npart]->TransVolume > Step)
+                    part[npart]->checkVolume(Step);
+                else if (part[npart]->TransVolume - part[npart]->Pvolume > Step)
+                    part[npart]->checkVolume(-Step);
+                part[npart]->partoutl[i] *= (part[npart]->pannedVolLeft() * part[npart]->ctl->expression.relvolume);
+                part[npart]->partoutr[i] *= (part[npart]->pannedVolRight() * part[npart]->ctl->expression.relvolume);
             }
+
         }
         // System effects
         for (nefx = 0; nefx < NUM_SYS_EFX; ++nefx)
@@ -3532,7 +2157,7 @@ int SynthEngine::MasterAudio(float *outl [NUM_MIDI_PARTS + 1], float *outr [NUM_
             // Mix the channels according to the part settings about System Effect
             for (npart = 0; npart < Runtime.NumAvailableParts; ++npart)
             {
-                if (partonoffRead(npart)        // it's enabled
+                if (partLocal[npart]        // it's enabled
                  && Psysefxvol[nefx][npart]      // it's sending an output
                  && part[npart]->Paudiodest & 1) // it's connected to the main outs
                 {
@@ -3600,11 +2225,22 @@ int SynthEngine::MasterAudio(float *outl [NUM_MIDI_PARTS + 1], float *outr [NUM_
         LFOtime++; // update the LFO's time
 
         // Master volume, and all output fade
+        float cStep = ControlStep;
         for (int idx = 0; idx < p_buffersize; ++idx)
         {
+            if (Pvolume - TransVolume > cStep)
+            {
+                TransVolume += cStep;
+                volume = dB2rap((TransVolume - 96.0f) / 96.0f * 40.0f);
+            }
+            else if (TransVolume - Pvolume > cStep)
+            {
+                TransVolume -= cStep;
+                volume = dB2rap((TransVolume - 96.0f) / 96.0f * 40.0f);
+            }
             mainL[idx] *= volume; // apply Master Volume
             mainR[idx] *= volume;
-            if (shutup) // fade-out - fadeLevel must also have been set
+            if (fadeAll) // fadeLevel must also have been set
             {
                 for (npart = 0; npart < (Runtime.NumAvailableParts); ++npart)
                 {
@@ -3619,9 +2255,9 @@ int SynthEngine::MasterAudio(float *outl [NUM_MIDI_PARTS + 1], float *outr [NUM_
                 fadeLevel -= fadeStep;
             }
         }
-
+#ifdef MUTEX
         actionLock(unlock);
-
+#endif
         // Peak calculation for mixed outputs
         VUpeak.values.vuRmsPeakL = 1e-12f;
         VUpeak.values.vuRmsPeakR = 1e-12f;
@@ -3638,13 +2274,23 @@ int SynthEngine::MasterAudio(float *outl [NUM_MIDI_PARTS + 1], float *outr [NUM_
             VUpeak.values.vuRmsPeakR += mainR[idx] * mainR[idx];
         }
 
-       if (shutup && fadeLevel <= 0.001f)
-            ShutUp();
+        if (fadeAll && fadeLevel <= 0.001f)
+        {
+            Mute();
+            unsigned char fadeType = fadeAll & 0xff;
+            if (fadeAll > 0 && fadeAll < 3)
+                writeRBP(6, fadeAll); // stop and master reset
+            else if (fadeType == 3)
+                writeRBP(6, fadeType, fadeAll >> 8, 0); // load patchset
+            else if (fadeType == 4)
+                writeRBP(6, fadeType, (fadeAll >> 8) & 0xff, fadeAll >> 16); // load vector
+            fadeAll = 0;
+        }
 
         // Peak computation for part vu meters
         for (npart = 0; npart < Runtime.NumAvailableParts; ++npart)
         {
-            if (partonoffRead(npart))
+            if (partLocal[npart])
             {
                 for (int idx = 0; idx < p_buffersize; ++idx)
                 {
@@ -3665,7 +2311,7 @@ int SynthEngine::MasterAudio(float *outl [NUM_MIDI_PARTS + 1], float *outr [NUM_
             VUpeak.values.vuOutPeakR = 1e-12f;
             for (npart = 0; npart < Runtime.NumAvailableParts; ++npart)
             {
-                if (partonoffRead(npart))
+                if (partLocal[npart])
                     VUpeak.values.parts[npart] = 1.0e-9;
                 else if (VUpeak.values.parts[npart] < -2.2) // fake peak is a negative value
                     VUpeak.values.parts[npart]+= 2;
@@ -3690,10 +2336,10 @@ bool SynthEngine::fetchMeterData(VUtransfer *VUdata)
 }
 
 // Parameter control
-void SynthEngine::setPvolume(char control_value)
+void SynthEngine::setPvolume(float control_value)
 {
     Pvolume = control_value;
-    volume  = dB2rap((Pvolume - 96.0f) / 96.0f * 40.0f);
+    //volume  = dB2rap((float(Pvolume) / 128.0 - 96.0f) / 96.0f * 40.0f);
 }
 
 
@@ -3726,6 +2372,8 @@ void SynthEngine::setPaudiodest(int value)
 // Panic! (Clean up all parts and effects)
 void SynthEngine::ShutUp(void)
 {
+
+
     VUpeak.values.vuOutPeakL = 1e-12f;
     VUpeak.values.vuOutPeakR = 1e-12f;
 
@@ -3738,17 +2386,13 @@ void SynthEngine::ShutUp(void)
         insefx[nefx]->cleanup();
     for (int nefx = 0; nefx < NUM_SYS_EFX; ++nefx)
         sysefx[nefx]->cleanup();
-    shutup = false;
-    fadeLevel = 0.0f;
 }
 
 
-void SynthEngine::allStop()
+void SynthEngine::allStop(unsigned int stopType)
 {
-    actionLock(lockmute);
-    shutup = 1;
+    fadeAll = stopType;
     fadeLevel = 1.0f;
-    actionLock(unlock);
 }
 
 
@@ -3791,28 +2435,31 @@ void SynthEngine::applyparameters(void)
 }
 
 
-int SynthEngine::loadParameters(string fname)
-{
-    int result = 0;
-    Runtime.SimpleCheck = false;
-
-    actionLock(lockmute);
-    defaults(); // clear all parameters
-    if (loadXML(fname)) // load the data
-    {
-        result = 1; // this is messy, but can't trust bool to int conversions
-        if (Runtime.SimpleCheck)
-            result = 3;
-    }
-    actionLock(unlock);
-    return result;
-}
-
-
 int SynthEngine::loadPatchSetAndUpdate(string fname)
 {
-    int result = loadParameters(fname);
-    GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateMaster, 0);
+    bool result = false;
+    fname = setExtension(fname, "xmz");
+    if (loadXML(fname)) // load the data
+    {
+        result = true;
+        actionLock(lockmute);
+        setAllPartMaps();
+        addHistory(fname, 2);
+        actionLock(unlock);
+    }
+
+    if (result)
+    {
+        Runtime.Log("Loaded " + fname);
+        GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateMaster, 0);
+    }
+    else
+    {
+        Unmute();
+        Runtime.Log("Could not load " + fname);
+        if (Runtime.showGui)
+            GuiThreadMsg::sendMessage(this, GuiThreadMsg::GuiAlert,miscMsgPush("Could not load " + fname));
+    }
     return result;
 }
 
@@ -3854,12 +2501,14 @@ bool SynthEngine::installBanks(int instance)
     xml->loadXMLfile(bankname);
     if (!xml->enterbranch(branch))
     {
-        Runtime. Log("extractConfigData, no " + branch + " branch");
+        Runtime.Log("extractConfigData, no " + branch + " branch");
         return false;
     }
     bank.parseConfigFile(xml);
     xml->exitbranch();
     delete xml;
+    SetBankRoot(Runtime.tempRoot);
+    SetBank(Runtime.tempBank);
     return true;
 }
 
@@ -3902,29 +2551,76 @@ void SynthEngine::addHistory(string name, int group)
     unsigned int offset = 0;
     bool copy = false;
     vector<string> &listType = *getHistory(group);
+    if (!listType.size())
+    {
+        listType.push_back(name);
+        Runtime.lastPatchSet = 0;
+        return;
+    }
     if (listType.size() > MAX_HISTORY)
         offset = listType.size() - MAX_HISTORY;
      // don't test against names that will be dropped when saving
+    int lineNo = offset;
+
     for (vector<string>::iterator it = listType.begin() + offset; it != listType.end(); ++it)
     {
         if (*it == name)
+        {
             copy = true;
+            break;
+        }
+        ++ lineNo;
     }
     if (!copy)
         listType.push_back(name);
+    if (group == 2)
+        Runtime.lastPatchSet = lineNo;
     return;
 }
 
 
 vector<string> * SynthEngine::getHistory(int group)
 {
-    if (group == 5)
-        return &VectorHistory;
-    else if (group == 4)
-        return &StateHistory;
-    else if (group == 3)
-        return &ScaleHistory;
-    return &ParamsHistory;
+    switch(group)
+    {
+        case 2:
+            return &ParamsHistory;
+            break;
+        case 3:
+            return &ScaleHistory;
+            break;
+        case 4:
+            return &StateHistory;
+            break;
+        case 5:
+            return &VectorHistory;
+            break;
+        case 6:
+            return &MidiLearnHistory;
+            break;
+        default:
+            Runtime.Log("Unrecognised group " + to_string(group) + "\nUsing patchset history");
+            return &ParamsHistory;
+    }
+}
+
+
+string SynthEngine::lastPatchSetSeen()
+{
+    if (Runtime.lastPatchSet == -1)
+        return "";
+    int count = 0;
+    vector<string> &listType = *getHistory(2);
+    vector<string>::iterator it = listType.begin();
+    while (it != listType.end() && count < Runtime.lastPatchSet)
+    {
+        ++ it;
+        ++ count;
+    }
+    if (it == listType.end())
+        return "";
+    else
+        return *it;
 }
 
 
@@ -3953,7 +2649,7 @@ bool SynthEngine::loadHistory()
     string filetype;
     string type;
     string extension;
-    for (int count = 2; count < 6; ++count)
+    for (int count = 2; count < 7; ++count)
     {
         switch (count)
         {
@@ -3971,6 +2667,10 @@ bool SynthEngine::loadHistory()
                 break;
             case 5:
                 type = "XMZ_VECTOR";
+                extension = "xvy_file";
+                break;
+            case 6:
+                type = "XMZ_MIDILEARN";
                 extension = "xvy_file";
                 break;
         }
@@ -4014,7 +2714,7 @@ bool SynthEngine::saveHistory()
         int x;
         string type;
         string extension;
-        for (int count = 2; count < 6; ++count)
+        for (int count = 2; count < 7; ++count)
         {
             switch (count)
             {
@@ -4032,6 +2732,10 @@ bool SynthEngine::saveHistory()
                     break;
                 case 5:
                     type = "XMZ_VECTOR";
+                    extension = "xvy_file";
+                    break;
+                case 6:
+                    type = "XMZ_MIDILEARN";
                     extension = "xvy_file";
                     break;
             }
@@ -4063,45 +2767,107 @@ bool SynthEngine::saveHistory()
 }
 
 
-bool SynthEngine::loadVector(unsigned char baseChan, string name, bool full)
+void SynthEngine::loadVectorAndUpdate(unsigned char baseChan, unsigned char nameID)
 {
-    /*if (baseChan >= NUM_MIDI_CHANNELS)
+    actionLock(lockmute);
+    ShutUp();
+    string name = miscMsgPop(nameID);
+    baseChan = loadVector(baseChan, name, true);
+    actionLock(unlock);
+    if (baseChan > 0)
     {
-        Runtime.Log("Invalid channel number");
-        return false;
-    }*/
+        baseChan &= 0xf;
+        Runtime.Log("Loaded Vector " + name + " to " + to_string(int(baseChan) + 1));
+        if (Runtime.showGui)
+        {
+            int tmp = 2 | (miscMsgPush(findleafname(name)) << 8) | baseChan << 16;
+            GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdateMaster, tmp);
+        }
+    }
+}
+
+
+unsigned char SynthEngine::loadVector(unsigned char baseChan, string name, bool full)
+{
     if (name.empty())
     {
         Runtime.Log("No filename");
-        return false;
+        return 0;
     }
     string file = setExtension(name, "xvy");
     legit_pathname(file);
     if (!isRegFile(file))
     {
         Runtime.Log("Can't find " + file);
-        return false;
+        return 0;
     }
     XMLwrapper *xml = new XMLwrapper(this);
     if (!xml)
     {
-        Runtime.Log("Load Vector failed XMLwrapper allocation");
-        return false;
+        Runtime.Log("Load Vector failed XMLwrapper allocation", 2);
+        return 0;
     }
     xml->loadXMLfile(file);
+
+    if (extractVectorData(&baseChan, true, xml))
+    {
+        int lastPart = NUM_MIDI_PARTS;
+        if (Runtime.nrpndata.vectorYaxis[baseChan] >= 0x7f)
+            lastPart = NUM_MIDI_CHANNELS * 2;
+        for (int npart = 0; npart < lastPart; npart += NUM_MIDI_CHANNELS)
+        {
+            if (!xml->enterbranch("PART", npart))
+                continue;
+            part[npart + baseChan]->getfromXML(xml);
+            part[npart + baseChan]->Prcvchn = baseChan;
+            xml->exitbranch();
+        }
+    }
+    xml->endbranch(); // VECTOR
+    addHistory(file, 5);
+    delete xml;
+    return baseChan | 0x20; // ensures we can get 'true' from channel 0
+}
+
+
+unsigned char SynthEngine::extractVectorData(unsigned char *baseChan, bool full, XMLwrapper *xml)
+{
     if (!xml->enterbranch("VECTOR"))
     {
-        Runtime. Log("Extract Data, no VECTOR branch");
+        if (full)
+            Runtime. Log("Extract Data, no VECTOR branch");
         return false;
     }
-    addHistory(file, 5);
+
     int lastPart = NUM_MIDI_PARTS;
-    if (baseChan >= NUM_MIDI_CHANNELS)
-        baseChan = xml->getpar255("Source_channel", 0);
-    Runtime.nrpndata.vectorXaxis[baseChan] = xml->getpar255("X_sweep_CC", 0xff);
-    if (Runtime.nrpndata.vectorXaxis[baseChan] < 0x7f)
-        Runtime.nrpndata.vectorEnabled[baseChan] = true;;
-    Runtime.nrpndata.vectorYaxis[baseChan] = xml->getpar255("Y_sweep_CC", 0xff);
+    int tmp;
+    if (*baseChan >= NUM_MIDI_CHANNELS)
+        *baseChan = xml->getpar255("Source_channel", 0);
+    tmp = xml->getpar255("X_sweep_CC", 0xff);
+    if (tmp >= 0x0e && tmp  < 0x7f)
+    {
+        Runtime.nrpndata.vectorXaxis[*baseChan] = tmp;
+        Runtime.nrpndata.vectorEnabled[*baseChan] = true;
+    }
+    else
+    {
+        Runtime.nrpndata.vectorXaxis[*baseChan] = 0x7f;
+        Runtime.nrpndata.vectorEnabled[*baseChan] = false;
+    }
+
+    // should exit here if not enabled
+
+    tmp = xml->getpar255("Y_sweep_CC", 0xff);
+    if (tmp >= 0x0e && tmp  < 0x7f)
+        Runtime.nrpndata.vectorYaxis[*baseChan] = tmp;
+    else
+    {
+        lastPart = NUM_MIDI_CHANNELS * 2;
+        Runtime.nrpndata.vectorYaxis[*baseChan] = 0x7f;
+        partonoffWrite(*baseChan + NUM_MIDI_CHANNELS * 2, 0);
+        partonoffWrite(*baseChan + NUM_MIDI_CHANNELS * 3, 0);
+        // disable these - not in current vector definition
+    }
 
     int x_feat = 0;
     int y_feat = 0;
@@ -4119,14 +2885,10 @@ bool SynthEngine::loadVector(unsigned char baseChan, string name, bool full)
         x_feat |= 8;
     if (xml->getparbool("X_feature_8_R", false))
         x_feat |= 0x40;
-    Runtime.nrpndata.vectorXcc2[baseChan] = xml->getpar255("X_CCout_2", 10);
-    Runtime.nrpndata.vectorXcc4[baseChan] = xml->getpar255("X_CCout_4", 74);
-    Runtime.nrpndata.vectorXcc8[baseChan] = xml->getpar255("X_CCout_8", 1);
-    if (Runtime.nrpndata.vectorYaxis[baseChan] > 0x7f)
-    {
-        lastPart /= 2;
-    }
-    else
+    Runtime.nrpndata.vectorXcc2[*baseChan] = xml->getpar255("X_CCout_2", 10);
+    Runtime.nrpndata.vectorXcc4[*baseChan] = xml->getpar255("X_CCout_4", 74);
+    Runtime.nrpndata.vectorXcc8[*baseChan] = xml->getpar255("X_CCout_8", 1);
+    if (lastPart == NUM_MIDI_PARTS)
     {
         if (xml->getparbool("Y_feature_1", false))
             y_feat |= 1;
@@ -4142,31 +2904,23 @@ bool SynthEngine::loadVector(unsigned char baseChan, string name, bool full)
             y_feat |= 8;
         if (xml->getparbool("Y_feature_8_R", false))
             y_feat |= 0x40;
-        Runtime.nrpndata.vectorYcc2[baseChan] = xml->getpar255("Y_CCout_2", 10);
-        Runtime.nrpndata.vectorYcc4[baseChan] = xml->getpar255("Y_CCout_4", 74);
-        Runtime.nrpndata.vectorYcc8[baseChan] = xml->getpar255("Y_CCout_8", 1);
+        Runtime.nrpndata.vectorYcc2[*baseChan] = xml->getpar255("Y_CCout_2", 10);
+        Runtime.nrpndata.vectorYcc4[*baseChan] = xml->getpar255("Y_CCout_4", 74);
+        Runtime.nrpndata.vectorYcc8[*baseChan] = xml->getpar255("Y_CCout_8", 1);
     }
-    Runtime.nrpndata.vectorXfeatures[baseChan] = x_feat;
-    Runtime.nrpndata.vectorYfeatures[baseChan] = y_feat;
-
-    if (full)
-    {
+    Runtime.nrpndata.vectorXfeatures[*baseChan] = x_feat;
+    Runtime.nrpndata.vectorYfeatures[*baseChan] = y_feat;
+    if (Runtime.NumAvailableParts < lastPart)
         Runtime.NumAvailableParts = xml->getpar255("current_midi_parts", Runtime.NumAvailableParts);
-        for (int npart = 0; npart < lastPart; npart += NUM_MIDI_CHANNELS)
-        {
-            if (!xml->enterbranch("PART", npart))
-                continue;
-            part[npart + baseChan]->getfromXML(xml);
-            part[npart + baseChan]->Prcvchn = baseChan;
-            xml->exitbranch();
-            if (partonoffRead(npart + baseChan) && (part[npart + baseChan]->Paudiodest & 2))
-                GuiThreadMsg::sendMessage(this, GuiThreadMsg::RegisterAudioPort, npart + baseChan);
-        }
-        GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePart,0);
-    // need to ensure thread safety here.
+
+    for (int npart = 0; npart < lastPart; npart += NUM_MIDI_CHANNELS)
+    {
+        partonoffWrite(npart + *baseChan, 1);
+        if (part[npart + *baseChan]->Paudiodest & 2)
+            GuiThreadMsg::sendMessage(this, GuiThreadMsg::RegisterAudioPort, npart + *baseChan);
     }
-    xml->exitbranch();
-    delete xml;
+    GuiThreadMsg::sendMessage(this, GuiThreadMsg::UpdatePart,0);
+
     return true;
 }
 
@@ -4198,9 +2952,25 @@ bool SynthEngine::saveVector(unsigned char baseChan, string name, bool full)
     XMLwrapper *xml = new XMLwrapper(this);
     if (!xml)
     {
-        Runtime.Log("Save Vector failed xmltree allocation");
+        Runtime.Log("Save Vector failed xmltree allocation", 2);
         return false;
     }
+    insertVectorData(baseChan, true, xml);
+
+    if (xml->saveXMLfile(file))
+        addHistory(file, 5);
+    else
+    {
+        Runtime.Log("Failed to save data to " + file, 2);
+        ok = false;
+    }
+    delete xml;
+    return ok;
+}
+
+
+bool SynthEngine::insertVectorData(unsigned char baseChan, bool full, XMLwrapper *xml)
+{
     int lastPart = NUM_MIDI_PARTS;
     int x_feat = Runtime.nrpndata.vectorXfeatures[baseChan];
     int y_feat = Runtime.nrpndata.vectorYfeatures[baseChan];
@@ -4245,16 +3015,8 @@ bool SynthEngine::saveVector(unsigned char baseChan, string name, bool full)
                 xml->endbranch();
             }
         }
-        if (xml->saveXMLfile(file))
-            addHistory(file, 5);
-        else
-        {
-            Runtime.Log("Failed to save data to " + file);
-            ok = false;
-        }
         xml->endbranch();
-    delete xml;
-    return ok;
+    return true;
 }
 
 
@@ -4265,6 +3027,8 @@ void SynthEngine::add2XML(XMLwrapper *xml)
     xml->addpar("current_midi_parts", Runtime.NumAvailableParts);
     xml->addpar("volume", Pvolume);
     xml->addpar("key_shift", Pkeyshift);
+    xml->addpar("channel_switch_type", Runtime.channelSwitchType);
+    xml->addpar("channel_switch_CC", Runtime.channelSwitchCC);
 
     xml->beginbranch("MICROTONAL");
     microtonal.add2XML(xml);
@@ -4315,6 +3079,8 @@ void SynthEngine::add2XML(XMLwrapper *xml)
     }
     xml->endbranch(); // INSERTION_EFFECTS
     actionLock(unlock);
+    for (int i = 0; i < NUM_MIDI_CHANNELS; ++i)
+        insertVectorData(i, false, xml);
     xml->endbranch(); // MASTER
 }
 
@@ -4368,7 +3134,7 @@ bool SynthEngine::loadXML(string filename)
     XMLwrapper *xml = new XMLwrapper(this);
     if (NULL == xml)
     {
-        Runtime.Log("Failed to init xml tree");
+        Runtime.Log("Failed to init xml tree", 2);
         return false;
     }
     if (!xml->loadXMLfile(filename))
@@ -4385,15 +3151,6 @@ bool SynthEngine::loadXML(string filename)
 
 bool SynthEngine::getfromXML(XMLwrapper *xml)
 {
-
-    if (!xml->enterbranch("BASE_PARAMETERS"))
-    {
-        Runtime.Log("SynthEngine getfromXML, no BASE branch");
-        Runtime.NumAvailableParts = NUM_MIDI_CHANNELS; // set default to be safe
-        return false;
-    }
-    Runtime.NumAvailableParts = xml->getpar("max_midi_parts", NUM_MIDI_CHANNELS, NUM_MIDI_CHANNELS, NUM_MIDI_PARTS); // for backwards compatibility
-    xml->exitbranch();
     if (!xml->enterbranch("MASTER"))
     {
         Runtime.Log("SynthEngine getfromXML, no MASTER branch");
@@ -4402,8 +3159,10 @@ bool SynthEngine::getfromXML(XMLwrapper *xml)
     Runtime.NumAvailableParts = xml->getpar("current_midi_parts", NUM_MIDI_CHANNELS, NUM_MIDI_CHANNELS, NUM_MIDI_PARTS);
     setPvolume(xml->getpar127("volume", Pvolume));
     setPkeyshift(xml->getpar("key_shift", Pkeyshift, MIN_KEY_SHIFT + 64, MAX_KEY_SHIFT + 64));
+    Runtime.channelSwitchType = xml->getpar("channel_switch_type", Runtime.channelSwitchType, 0, 3);
+    Runtime.channelSwitchCC = xml->getpar127("channel_switch_CC", Runtime.channelSwitchCC);
 
-    part[0]->Penabled = 0;
+    partonoffWrite(0, 0); // why?;
     for (int npart = 0; npart < NUM_MIDI_PARTS; ++npart)
     {
         if (!xml->enterbranch("PART", npart))
@@ -4469,6 +3228,8 @@ bool SynthEngine::getfromXML(XMLwrapper *xml)
         }
         xml->exitbranch();
     }
+    for (unsigned char i = 0; i < NUM_MIDI_CHANNELS; ++i)
+        extractVectorData(&i, false, xml);
     xml->exitbranch(); // MASTER
     return true;
 }
@@ -4548,7 +3309,7 @@ void SynthEngine::closeGui()
     {
         delete guiMaster;
         guiMaster = NULL;
-        Runtime.showGui = false;
+        //Runtime.showGui = false;
     }
 }
 
@@ -4569,3 +3330,34 @@ void SynthEngine::setWindowTitle(string _windowTitle)
         windowTitle = _windowTitle;
 }
 
+void SynthEngine::getLimits(CommandBlock *getData)
+{
+    int control = getData->data.control;
+    getData->limits.min = 0;
+    getData->limits.def = 6400;
+    getData->limits.max = 127;
+    cout << "control " << to_string(int(control))<< endl;
+    switch (control)
+    {
+        case 0:
+            getData->limits.def = 9000;
+            break;
+
+        case 14:
+            getData->limits.min = 1;
+            getData->limits.def = 100;
+            getData->limits.max = Runtime.NumAvailableParts;;
+            break;
+
+        case 15:
+            getData->limits.min = 16;
+            getData->limits.def = 1600;
+            getData->limits.max = 64;
+            break;
+
+        case 35:
+            getData->limits.min = -36;
+            getData->limits.def = 0;
+            getData->limits.max = 36;
+    }
+}

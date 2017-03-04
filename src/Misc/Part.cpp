@@ -5,7 +5,7 @@
     Copyright (C) 2002-2005 Nasca Octavian Paul
     Copyright 2009, James Morris
     Copyright 2009-2011, Alan Calvert
-    Copyright 2014, Will Godfrey
+    Copyright 2014-2017, Will Godfrey
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -21,12 +21,15 @@
     yoshimi; if not, write to the Free Software Foundation, Inc., 51 Franklin
     Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-    This file is derivative of ZynAddSubFX original code, modified July 2014
+    This file is derivative of ZynAddSubFX original code.
+
+    Modified March 2017
 */
 
 #include <cstring>
 #include <cmath>
 #include <semaphore.h>
+#include <iostream>
 
 using namespace std;
 
@@ -107,7 +110,6 @@ Part::Part(Microtonal *microtonal_, FFTwrapper *fft_, SynthEngine *_synth) :
     cleanup();
     Pname.clear();
 
-    oldvolumel = oldvolumer = 0.5f;
     lastnote = -1;
     lastpos = 0; // lastpos will store previously used NoteOn(...)'s pos.
     lastlegatomodevalid = false; // To store previous legatomodevalid value.
@@ -123,9 +125,11 @@ void Part::defaults(void)
     Ppolymode = 1;
     Plegatomode = 0;
     setVolume(96);
+    TransVolume = Pvolume - 1; // ensure it gets set
     Pkeyshift = 64;
     Prcvchn = 0;
     setPan(Ppanning = 64);
+    TransPanning = Ppanning - 1;
     Pvelsns = 64;
     Pveloffs = 64;
     Pkeylimit = 20;
@@ -133,6 +137,16 @@ void Part::defaults(void)
     setDestination(1);
     defaultsinstrument();
     ctl->defaults();
+    setNoteMap(0);
+}
+
+void Part::setNoteMap(int keyshift)
+{
+    for (int i = 0; i < 128; ++i)
+        if (Pdrummode)
+            PnoteMap[i] = microtonal->getFixedNoteFreq(i);
+        else
+            PnoteMap[i] = microtonal->getNoteFreq(i, keyshift + synth->Pkeyshift - 64);
 }
 
 
@@ -145,6 +159,7 @@ void Part::defaultsinstrument(void)
     info.Pcomments.clear();
 
     Pkitmode = 0;
+    Pkitfade = false;
     Pdrummode = 0;
     Pfrand = 0;
 
@@ -352,19 +367,10 @@ void Part::NoteOn(int note, int velocity, int masterkeyshift)
         vel = (vel < 0.0f) ? 0.0f : vel;
         vel = (vel > 1.0f) ? 1.0f : vel;
 
-        // compute the keyshift
-        int partkeyshift = (int)Pkeyshift - 64;
-        int keyshift = masterkeyshift + partkeyshift;
-
         // initialise note frequency
         float notebasefreq;
-        if (!Pdrummode)
-        {
-            if ((notebasefreq = microtonal->getNoteFreq(note, keyshift)) < 0.0f)
-                return; // the key is not mapped
-        }
-        else
-            notebasefreq = microtonal->getNoteFreq(note);
+        if ((notebasefreq = PnoteMap[note]) < 0.0f)
+            return; // the key is not mapped
 
         // Humanise
         // cout << "\n" << notebasefreq << endl;
@@ -552,13 +558,68 @@ void Part::NoteOn(int note, int velocity, int masterkeyshift)
         }
         else
         { // init the notes for the "kit mode"
+            float truevel = vel; // we need this as cross fade modifies the value
             for (int item = 0; item < NUM_KIT_ITEMS; ++item)
             {
                 if (kit[item].Pmuted)
                     continue;
-                if (note < kit[item].Pminkey
-                    || note>kit[item].Pmaxkey)
+                if (note < kit[item].Pminkey || note>kit[item].Pmaxkey)
                     continue;
+
+
+                // experimental cross fade on multi
+                if (Pkitfade)
+                {
+                    vel = truevel; // always start with correct value
+                    int range = 0;
+                    int position;
+                    if ((item & 1) == 0 && kit[item + 1].Penabled) // crossfade lower item of pair
+                    {
+                        if (kit[item].Pmaxkey > kit[item + 1].Pminkey && kit[item].Pmaxkey < kit[item + 1].Pmaxkey)
+                        {
+                            if (note >= kit[item + 1].Pminkey)
+                            {
+                                range = kit[item].Pmaxkey - kit[item + 1].Pminkey;
+                                position = kit[item].Pmaxkey - note;
+                            }
+                        }
+                        else if (kit[item + 1].Pmaxkey > kit[item].Pminkey && kit[item + 1].Pmaxkey < kit[item].Pmaxkey ) // eliminate equal state
+                        {
+                            if (note <= kit[item + 1].Pmaxkey)
+                            {
+                                range = kit[item + 1].Pmaxkey - kit[item].Pminkey;
+                                position = (note - kit[item].Pminkey);
+                            }
+                        }
+                    }
+                    else if ((item & 1) == 1 && kit[item - 1].Penabled)// crossfade upper item of pair
+                    {
+
+                        if (kit[item - 1].Pmaxkey > kit[item ].Pminkey && kit[item - 1].Pmaxkey < kit[item ].Pmaxkey)
+                        {
+                            if (note <= kit[item - 1].Pmaxkey)
+                            {
+                                range = kit[item - 1].Pmaxkey - kit[item].Pminkey;
+                                position = (note - kit[item].Pminkey);
+                            }
+                        }
+                        else if (kit[item].Pmaxkey > kit[item - 1].Pminkey && kit[item].Pmaxkey < kit[item - 1].Pmaxkey) // eliminate equal state
+                        {
+                            if (note >= kit[item - 1].Pminkey)
+                            {
+                                range = kit[item].Pmaxkey - kit[item - 1].Pminkey;
+                                position = kit[item].Pmaxkey - note;
+                            }
+                        }
+                    }
+                    if (range)
+                    {
+                        vel = truevel * ((float)position / range);
+                        //cout << item << "  " << vel << endl;
+                    }
+                }
+                // end of cross fade
+
 
                 int ci = partnote[pos].itemsplaying; // ci=current item
 
@@ -997,6 +1058,15 @@ void Part::ComputePartSmps(void)
             KillNotePos(k);
     }
 
+    for (int item = 0; item < NUM_KIT_ITEMS; ++item)
+    {
+        if (kit[item].adpars)
+            kit[item].adpars->postrender();
+        if (kit[item].subpars)
+            kit[item].subpars->postrender();
+        if (kit[item].padpars)
+            kit[item].padpars->postrender();
+    }
     // Apply part's effects and mix them
     for (int nefx = 0; nefx < NUM_PART_EFX; ++nefx)
     {
@@ -1047,8 +1117,14 @@ void Part::ComputePartSmps(void)
 // Parameter control
 void Part::setVolume(float value)
 {
-    Pvolume = (int)value;
-    volume  = dB2rap((value - 96.0f) / 96.0f * 40.0f) * ctl->expression.relvolume;
+    Pvolume = value;
+}
+
+
+void Part::checkVolume(float step)
+{
+    TransVolume += step;
+    volume = dB2rap((TransVolume - 96.0f) / 96.0f * 40.0f);
 }
 
 
@@ -1058,10 +1134,17 @@ void Part::setDestination(int value)
 }
 
 
-void Part::setPan(char value)
+void Part::setPan(float value)
 {
     Ppanning = value;
-    float t = ((Ppanning > 0) ? (float)(Ppanning - 1) : 0.0f) / 126.0f;
+}
+
+
+void Part::checkPanning(float step)
+{
+    float t;
+    TransPanning += step;
+    t = ((TransPanning > 0) ? (TransPanning - 1) : 0.0f) / 126.0f;
     pangainL = cosf(t * HALFPI);
     pangainR = cosf((1.0f - t) * HALFPI);
 }
@@ -1077,7 +1160,12 @@ void Part::setkititemstatus(int kititem, int Penabled_)
     bool resetallnotes = false;
     if (!Penabled_)
     {
+        kit[kititem].Pmuted = 0;
+        kit[kititem].Padenabled = 0;
+        kit[kititem].Psubenabled = 0;
+        kit[kititem].Ppadenabled = 0;
         kit[kititem].Pname.clear();
+        kit[kititem].Psendtoparteffect = 0;
         if (kit[kititem].adpars)
         {
             delete kit[kititem].adpars;
@@ -1125,6 +1213,7 @@ void Part::add2XMLinstrument(XMLwrapper *xml)
 
     xml->beginbranch("INSTRUMENT_KIT");
     xml->addpar("kit_mode", Pkitmode);
+    xml->addparbool("kit_crossfade", Pkitfade);
     xml->addparbool("drum_mode", Pdrummode);
 
     for (int i = 0; i < NUM_KIT_ITEMS; ++i)
@@ -1189,9 +1278,7 @@ void Part::add2XMLinstrument(XMLwrapper *xml)
 void Part::add2XML(XMLwrapper *xml)
 {
     // parameters
-    xml->addparbool("enabled", Penabled);
-    if (!Penabled && xml->minimal)
-        return;
+    xml->addparbool("enabled", (Penabled == 1));
 
     xml->addpar("volume", Pvolume);
     xml->addpar("panning", Ppanning);
@@ -1243,7 +1330,6 @@ bool Part::saveXML(string filename)
 
 int Part::loadXMLinstrument(string filename)
 {
-    synth->getRuntime().SimpleCheck = false;
     XMLwrapper *xml = new XMLwrapper(synth);
     if (!xml)
     {
@@ -1263,12 +1349,14 @@ int Part::loadXMLinstrument(string filename)
         return 0;
     }
     defaultsinstrument();
+    Pname = findleafname(filename); // in case there's no internal
+    int chk = findSplitPoint(Pname);
+    if (chk > 0)
+        Pname = Pname.substr(chk + 1, Pname.size() - chk - 1);
     getfromXMLinstrument(xml);
     applyparameters();
     xml->exitbranch();
     delete xml;
-    if (synth->getRuntime().SimpleCheck)
-        return 3;
     return 1;
 }
 
@@ -1283,13 +1371,15 @@ void Part::applyparameters(void)
 
 void Part::getfromXMLinstrument(XMLwrapper *xml)
 {
+    string tempname;
     if (xml->enterbranch("INFO"))
     {
-        Pname = xml->getparstr("name");
-        if (Pname < "!")
+        tempname = xml->getparstr("name");
+        //synth->getRuntime().Log("name <" + tempname + ">");
+        if (tempname > "!")
+            Pname = tempname;
+        if (Pname <= "!" || Pname == "Simple Sound")
             Pname = "No Title";
-        else if (Pname == "Simple Sound") // there should be a better way to do this!
-            synth->getRuntime().SimpleCheck = true;
         info.Pauthor = xml->getparstr("author");
         info.Pcomments = xml->getparstr("comments");
         info.Ptype = xml->getpar("type", info.Ptype, 0, 16);
@@ -1304,8 +1394,9 @@ void Part::getfromXMLinstrument(XMLwrapper *xml)
     else
     {
         Pkitmode = xml->getpar127("kit_mode", Pkitmode);
+        Pkitfade = xml->getparbool("kit_crossfade", Pkitfade);
         Pdrummode = xml->getparbool("drum_mode", Pdrummode);
-        setkititemstatus(0, 0);
+        //setkititemstatus(0, 0); // does odd things :(
         for (int i = 0; i < NUM_KIT_ITEMS; ++i)
         {
             if (!xml->enterbranch("INSTRUMENT_KIT_ITEM", i))
@@ -1367,7 +1458,7 @@ void Part::getfromXMLinstrument(XMLwrapper *xml)
 
 void Part::getfromXML(XMLwrapper *xml)
 {
-    Penabled = xml->getparbool("enabled", Penabled);
+    Penabled = (xml->getparbool("enabled", Penabled) == 1);
 
     setVolume(xml->getpar127("volume", Pvolume));
     setPan(xml->getpar127("panning", Ppanning));
@@ -1375,6 +1466,7 @@ void Part::getfromXML(XMLwrapper *xml)
     Pminkey = xml->getpar127("min_key", Pminkey);
     Pmaxkey = xml->getpar127("max_key", Pmaxkey);
     Pkeyshift = xml->getpar("key_shift", Pkeyshift, MIN_KEY_SHIFT + 64, MAX_KEY_SHIFT + 64);
+    setNoteMap(Pkeyshift - 64);
     Prcvchn = xml->getpar127("rcv_chn", Prcvchn);
 
     Pvelsns = xml->getpar127("velocity_sensing", Pvelsns);
@@ -1401,6 +1493,7 @@ void Part::getfromXML(XMLwrapper *xml)
 
     if (xml->enterbranch("INSTRUMENT"))
     {
+        Pname = ""; // clear out any previous name
         getfromXMLinstrument(xml);
         xml->exitbranch();
         applyparameters();
@@ -1409,5 +1502,79 @@ void Part::getfromXML(XMLwrapper *xml)
     {
         ctl->getfromXML(xml);
         xml->exitbranch();
+    }
+}
+
+
+void Part::getLimits(CommandBlock *getData)
+{
+    int control = getData->data.control;
+    getData->limits.min = 0;
+    getData->limits.def = 6400;
+    getData->limits.max = 127;
+    //cout << "control " << to_string(int(control))<< endl;
+    switch (control)
+    {
+        case 0:
+            getData->limits.def = 9600;
+            break;
+
+        case 5:
+            getData->limits.min = 1;
+            getData->limits.def = 100;
+            getData->limits.max = 16;
+            break;
+
+        case 6:
+            getData->limits.def = 0;
+            getData->limits.max = 2;
+            break;
+
+        case 7:
+        case 57:
+            getData->limits.def = 0;
+            getData->limits.max = 1;
+            break;
+
+        case 8:
+            getData->limits.def = 100;
+            getData->limits.max = 1;
+            break;
+
+        case 16:
+            getData->limits.def = 0;
+            break;
+
+        case 17:
+            getData->limits.def = 12700;
+            break;
+
+        case 33:
+            getData->limits.def = 2000;
+            getData->limits.max = 60;
+            break;
+
+        case 35:
+            getData->limits.min = -36;
+            getData->limits.def = 0;
+            getData->limits.max = 36;
+            break;
+
+        case 40:
+        case 41:
+        case 42:
+        case 43:
+            getData->limits.def = 0;
+            break;
+
+        case 48:
+            getData->limits.def = 0;
+            getData->limits.max = 50;
+            break;
+
+        case 58:
+            getData->limits.def = 0;
+            getData->limits.max = 3;
+            break;
     }
 }

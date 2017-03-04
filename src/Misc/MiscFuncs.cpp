@@ -2,7 +2,7 @@
     MiscFuncs.cpp
 
     Copyright 2010, Alan Calvert
-    Copyright 2014-2016, Will Godfrey
+    Copyright 2014-2017, Will Godfrey
 
     This file is part of yoshimi, which is free software: you can
     redistribute it and/or modify it under the terms of the GNU General
@@ -15,7 +15,9 @@
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with yoshimi.  If not, see <http://www.gnu.org/licenses/>.
+    along with yoshimi.  If not, see <http://www.gnu.org/licenses/>
+
+    Modifed February 2017
 */
 
 #include <sys/stat.h>
@@ -24,7 +26,9 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <sstream>
+#include <iostream>
 #include <string.h>
+#include <mutex>
 
 using namespace std;
 
@@ -107,7 +111,10 @@ string MiscFuncs::asHexString(int x)
 {
    ostringstream oss;
    oss << hex << x;
-   return string(oss.str());
+   string res = string(oss.str());
+   if (res.length() & 1)
+       return "0"+res;
+   return res;
 }
 
 
@@ -115,7 +122,10 @@ string MiscFuncs::asHexString(unsigned int x)
 {
    ostringstream oss;
    oss << hex << x;
-   return string(oss.str());
+   string res = string(oss.str());
+   if (res.length() & 1)
+       return "0"+res;
+   return res;
 }
 
 
@@ -235,6 +245,21 @@ string MiscFuncs::findleafname(string name)
 }
 
 
+int MiscFuncs::findSplitPoint(string name)
+{
+    int chk = 0;
+    char ch = name.at(chk);
+    while (ch >= '0' and ch <= '9' and chk < 4)
+    {
+        chk += 1;
+        ch = name.at(chk);
+    }
+    if (ch != '-')
+        chk = 0;
+    return chk;
+}
+
+
 // adds or replaces wrong extension with the right one.
 string MiscFuncs::setExtension(string fname, string ext)
 {
@@ -313,7 +338,7 @@ char *MiscFuncs::skipChars(char *buf)
     {
         ++ buf;
     }
-    if (buf[0] == 0x20)
+    if (buf[0] == 0x20) // now find the next word (if any)
         buf = skipSpace(buf);
     return buf;
 }
@@ -340,6 +365,81 @@ bool MiscFuncs::matchnMove(int num , char *&pnt, const char *word)
 }
 
 
+/*
+ * These functions provide a transparent text messaging system.
+ * Calling functions only need to recognise integers and strings.
+ *
+ * Pop is destructive. No two functions should ever have been given
+ * the same 'live' ID, but if they do, the second one will get an
+ * empty string.
+ *
+ * Both will block, but should be very quick;
+ *
+ * Normally a message will clear before the next one arrives so the
+ * message numbers should remain very low even over multiple instances.
+ */
+void MiscFuncs::miscMsgInit()
+{
+    for (int i = 0; i < 255; ++i)
+        miscList.push_back("");
+    // we use 255 to denote an invalid entry
+}
+
+int MiscFuncs::miscMsgPush(string _text)
+{
+    sem_wait(&miscmsglock);
+
+    string text = _text;
+    list<string>::iterator it = miscList.begin();
+    int idx = 0;
+
+    while(it != miscList.end())
+    {
+        if ( *it == "")
+        {
+            *it = text;
+            break;
+        }
+        ++ it;
+        ++ idx;
+    }
+    if (it == miscList.end())
+    {
+        cout << "List full :(" << endl;
+        idx = -1;
+    }
+    //cout << "List size " << int(idx) << endl;
+    int result = idx; // in case of a new entry before return
+    sem_post(&miscmsglock);
+    return result;
+}
+
+
+string MiscFuncs::miscMsgPop(int _pos)
+{
+    sem_wait(&miscmsglock);
+
+    int pos = _pos;
+    list<string>::iterator it = miscList.begin();
+    int idx = 0;
+
+    while(it != miscList.end())
+    {
+        if (idx == pos)
+            break;
+        ++ it;
+        ++ idx;
+    }
+    string result = "";
+    if (idx == pos)
+    {
+        swap (result, *it); // in case of a new entry before return
+    }
+    sem_post(&miscmsglock);
+    return result;
+}
+
+
 // no more than 32 bit please!
 unsigned int MiscFuncs::nearestPowerOf2(unsigned int x, unsigned int min, unsigned int max)
 {
@@ -354,6 +454,16 @@ unsigned int MiscFuncs::nearestPowerOf2(unsigned int x, unsigned int min, unsign
     x |= x >> 8;
     x |= x >> 16;
     return ++x;
+}
+
+
+float MiscFuncs::limitsF(float value, float min, float max)
+{
+    if (value > max)
+        value = max;
+    else if (value < min)
+        value = min;
+    return value;
 }
 
 

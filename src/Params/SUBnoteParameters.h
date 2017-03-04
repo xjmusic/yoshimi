@@ -19,7 +19,7 @@
     yoshimi; if not, write to the Free Software Foundation, Inc., 51 Franklin
     Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-    This file is derivative of ZynAddSubFX original code, modified October 2009
+    This file is derivative of ZynAddSubFX original code, modified February 2017
 */
 
 #ifndef SUB_NOTE_PARAMETERS_H
@@ -42,7 +42,9 @@ class SUBnoteParameters : public Presets
         void add2XML(XMLwrapper *xml);
         void defaults(void);
         void getfromXML(XMLwrapper *xml);
+        void getLimits(CommandBlock *getData);
         void updateFrequencyMultipliers(void);
+        void postrender(void);
 
         // Amplitude Parametrers
         bool Pstereo; // true = stereo, false = mono

@@ -185,19 +185,23 @@ bool Bank::savetoslot(unsigned int ninstrument, Part *part)
     string filepath = getBankPath(currentRootID, currentBankID);
     if (filepath.at(filepath.size() - 1) != '/')
         filepath += "/";
-    filepath += filename;
-    if (isRegFile(filepath))
+    string fullpath = filepath + filename;
+    if (isRegFile(fullpath))
     {
-        int chk = remove(filepath.c_str());
+        int chk = remove(fullpath.c_str());
         if (chk < 0)
         {
-            synth->getRuntime().Log("saveToSlot failed to unlink " + filepath
+            synth->getRuntime().Log("saveToSlot failed to unlink " + fullpath
                         + ", " + string(strerror(errno)));
             return false;
         }
     }
-    if (!part->saveXML(filepath))
+    if (!part->saveXML(fullpath))
         return false;
+    filepath += force_bank_dir_file;
+    FILE *tmpfile = fopen(filepath.c_str(), "w+");
+    fputs (YOSHIMI_VERSION, tmpfile);
+    fclose(tmpfile);
     addtobank(currentRootID, currentBankID, ninstrument, filename, part->Pname);
     return true;
 }
@@ -303,17 +307,13 @@ bool Bank::loadbank(size_t rootID, size_t banknum)
 
                     // sorry Cal. They insisted :(
 
-                    int chk = 0;
-                    char ch = candidate.at(chk);
-                    while (ch >= '0' and ch <= '9' and chk < 4){
-                        chk += 1;
-                        ch = candidate.at(chk);
-                    }
-                    if (ch == '-')
+                    int chk = findSplitPoint(candidate);
+                    if (chk > 0)
                     {
-                        int instnum = string2int(candidate.substr(0, 4));
+                        int instnum = string2int(candidate.substr(0, chk));
                         // remove "NNNN-" and .xiz extension for instrument name
-                        string instname = candidate.substr(5, candidate.size() - xizext.size() - 5);
+                        // modified for numbered instruments with < 4 digits
+                        string instname = candidate.substr(chk + 1, candidate.size() - xizext.size() - chk - 1);
                         addtobank(rootID, banknum, instnum - 1, candidate, instname);
                     }
                     else
@@ -366,6 +366,7 @@ bool Bank::newbankfile(string newbankdir)
         forcefile += "/";
     forcefile += force_bank_dir_file;
     FILE *tmpfile = fopen(forcefile.c_str(), "w+");
+    fputs (YOSHIMI_VERSION, tmpfile);
     fclose(tmpfile);
     return true;
 }
@@ -741,6 +742,12 @@ void Bank::addDefaultRootDirs()
         ++ i;
     }
     addRootDir(localPath("/banks"));
+
+    while ( i >= 0)
+    {
+        changeRootID(i, (i * 5) + 5);
+        -- i;
+    }
     rescanforbanks();
 }
 
@@ -978,9 +985,6 @@ void Bank::parseConfigFile(XMLwrapper *xml)
 {
     roots.clear();
     hints.clear();
-    size_t tmp_root = xml->getpar("root_current_ID", 0, 0, 127);
-    size_t tmp_bank = xml->getpar("bank_current_ID", 0, 0, 127);
-
     string nodename = "BANKROOT";
     for (size_t i = 0; i < MAX_BANK_ROOT_DIRS; ++i)
     {
@@ -1015,17 +1019,11 @@ void Bank::parseConfigFile(XMLwrapper *xml)
     }
 
     rescanforbanks();
-
-    setCurrentRootID(tmp_root); // done this way so loading full set
-    setCurrentBankID(tmp_bank); // doesn't change it - need to investigate!
 }
 
 
 void Bank::saveToConfigFile(XMLwrapper *xml)
 {
-    xml->addpar(string("root_current_ID"), currentRootID);
-    xml->addpar(string("bank_current_ID"), currentBankID);
-
     for (size_t i = 0; i < MAX_BANK_ROOT_DIRS; i++)
     {
         if (roots.count(i) > 0 && !roots [i].path.empty())

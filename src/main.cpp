@@ -17,6 +17,7 @@
     along with yoshimi.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <sys/mman.h>
 #include <iostream>
 #include <stdio.h>
 #include <sys/types.h>
@@ -25,9 +26,11 @@
 using namespace std;
 
 #include "Misc/Config.h"
+#include "Misc/Splash.h"
 #include "Misc/SynthEngine.h"
 #include "MusicIO/MusicClient.h"
 #include "MasterUI.h"
+#include "UI/MiscGui.h"
 #include "Synth/BodyDisposal.h"
 #include <map>
 #include <list>
@@ -40,11 +43,10 @@ using namespace std;
 #include <FL/Fl_Window.H>
 #include <FL/Fl_Shared_Image.H>
 #include <FL/Fl_PNG_Image.H>
-#include "yoshimi-logo.h"
 
 #include <readline/readline.h>
 #include <readline/history.h>
-#include <Misc/CmdInterface.h>
+#include <Interface/CmdInterface.h>
 
 #include "Misc/NSM.H"
 #include "Misc/NSM/Client.H"
@@ -114,67 +116,43 @@ static void *mainGuiThread(void *arg)
 
     map<SynthEngine *, MusicClient *>::iterator it;
     fl_register_images();
-#if (FL_MAJOR_VERSION == 1 && FL_MINOR_VERSION < 3)
-    char *fname = tmpnam(NULL);
-    if (fname)
-    {
-        FILE *f = fopen(fname, "wb");
-        if (f)
-        {
-            fwrite(yoshimi_logo_png, sizeof(yoshimi_logo_png), 1, f);
-            fclose(f);
-        }
-    }
-    Fl_PNG_Image pix(fname);
-    if (fname)
-    unlink(fname);
-#else
-    Fl_PNG_Image pix("yoshimi_logo_png", yoshimi_logo_png, sizeof(yoshimi_logo_png));
-#endif
 
-    const int splashWidth = 411;
-    const int splashHeight = 311;
-    const int textHeight = 20;
-    const int textBorder = 15;
+    Fl_PNG_Image pix("splash_screen_png", splashPngData, splashPngLength);
+
+    const int textHeight = 15;
+    const int textY = 20;
+    const float timeout = 2.5f;
+    const int textColour = FL_DARK_BLUE;//WHITE;//CYAN;
 
     Fl_Window winSplash(splashWidth, splashHeight, "yoshimi splash screen");
-    Fl_Box box(0, 0, splashWidth,splashHeight);
-    //Fl_Pixmap pix(yoshimi_logo);
 
+    Fl_Box box(0, 0, splashWidth,splashHeight);
     box.image(pix);
-    Fl_Box boxLb(textBorder, splashHeight - textHeight * 2, splashWidth - textBorder * 2, textHeight);
+
+    string startup = YOSHIMI_VERSION;
+    startup = "V " + startup;
+
+    Fl_Box boxLb(0, splashHeight - textY - textHeight, splashWidth, textHeight, startup.c_str());
     boxLb.box(FL_NO_BOX);
     boxLb.align(FL_ALIGN_CENTER);
     boxLb.labelsize(textHeight);
     boxLb.labeltype(FL_NORMAL_LABEL);
-    boxLb.labelfont(FL_HELVETICA | FL_ITALIC);
-    string startup = YOSHIMI_VERSION;
-    startup = "Yoshimi " + startup + " is starting";
-    boxLb.label(startup.c_str());
+    boxLb.labelcolor(textColour);
+    boxLb.labelfont(FL_HELVETICA | FL_BOLD);
 
     winSplash.set_modal();
-    winSplash.clear_border();
+    //winSplash.clear_border();
     winSplash.border(false);
 
     if (bShowGui && firstRuntime->showSplash)
     {
         winSplash.position((Fl::w() - winSplash.w()) / 2, (Fl::h() - winSplash.h()) / 2);
         winSplash.show();
-        Fl::add_timeout(2, splashTimeout, &winSplash);
+        Fl::add_timeout(timeout, splashTimeout, &winSplash);
     }
 
     do
     {
-        if (bShowGui)
-        {
-            Fl::wait(0.033333);
-            while (!splashMessages.empty())
-            {
-                boxLb.copy_label(splashMessages.front().c_str());
-                splashMessages.pop_front();
-            }
-        }
-        else
             usleep(33333);
     }
     while (firstSynth == NULL); // just wait
@@ -195,6 +173,15 @@ static void *mainGuiThread(void *arg)
             _synth->getRuntime().deadObjects->disposeBodies();
             if (!_synth->getRuntime().runSynth && _synth->getUniqueId() > 0)
             {
+                if (_synth->getRuntime().configChanged)
+                {
+                    size_t tmpRoot = _synth->ReadBankRoot();
+                    size_t tmpBank = _synth->ReadBank();
+                    _synth->getRuntime().loadConfig(); // restore old settings
+                    _synth->SetBankRoot(tmpRoot);
+                    _synth->SetBank(tmpBank); // but keep current root and bank
+                }
+                _synth->getRuntime().saveConfig();
                 int tmpID =  _synth->getUniqueId();
                 if (_client)
                 {
@@ -232,16 +219,20 @@ static void *mainGuiThread(void *arg)
         if (bShowGui)
         {
             Fl::wait(0.033333);
-            while (!splashMessages.empty())
-            {
-                boxLb.copy_label(splashMessages.front().c_str());
-                splashMessages.pop_front();
-            }
             GuiThreadMsg::processGuiMessages();
         }
         else
             usleep(33333);
     }
+    if (firstSynth->getRuntime().configChanged)
+    {
+        size_t tmpRoot = firstSynth->ReadBankRoot();
+        size_t tmpBank = firstSynth->ReadBank();
+        firstSynth->getRuntime().loadConfig(); // restore old settings
+        firstSynth->SetBankRoot(tmpRoot);
+        firstSynth->SetBank(tmpBank); // but keep current root and bank
+    }
+    firstSynth->getRuntime().saveConfig();
     firstSynth->saveHistory();
     firstSynth->saveBanks(0);
     return NULL;
@@ -266,15 +257,6 @@ bool mainCreateNewInstance(unsigned int forceId)
         goto bail_out;
     }
 
-
-    /* this is done in newMusicClient() now! ^^^^^
-    if (!(musicClient->Open()))
-    {
-        synth->getRuntime().Log("Failed to open MusicClient");
-        goto bail_out;
-    }
-    */
-
     if (!synth->Init(musicClient->getSamplerate(), musicClient->getBuffersize()))
     {
         synth->getRuntime().Log("SynthEngine init failed");
@@ -294,6 +276,10 @@ bool mainCreateNewInstance(unsigned int forceId)
         {
             GuiThreadMsg::sendMessage(synth, GuiThreadMsg::NewSynthEngine, 0);
         }
+        if (synth->getRuntime().audioEngine < 1)
+            fl_alert("Yoshimi can't find an available sound system. Running with no Audio");
+        if (synth->getRuntime().midiEngine < 1)
+            fl_alert("Yoshimi can't find an input system. Running with no MIDI");
     }
 
     synth->getRuntime().StartupReport(musicClient);
@@ -306,7 +292,7 @@ bool mainCreateNewInstance(unsigned int forceId)
            if( stat( nsm->project_filename, &st ) == 0 )
            {
                     MasterUI *guiMaster = synth->getGuiMaster(false);
-                    guiMaster->do_load_master_unconditional( true, nsm->project_filename );
+                    guiMaster->do_load_master(true, nsm->project_filename );
            }
            // NSM_TODO: disable save here, NSM sessions can only
            // be saved from the NSM SM app
@@ -326,10 +312,8 @@ bool mainCreateNewInstance(unsigned int forceId)
     //register jack ports for enabled parts
     for (int npart = 0; npart < NUM_MIDI_PARTS; ++npart)
     {
-        if(synth->part [npart]->Penabled)
-        {
+        if (synth->partonoffRead(npart))
             mainRegisterAudioPort(synth, npart);
-        }
     }
     return true;
 
@@ -459,8 +443,6 @@ int main(int argc, char *argv[])
     firstSynth->installBanks(0);
     GuiThreadMsg::sendMessage(firstSynth, GuiThreadMsg::RefreshCurBank, 1);
 
-    //splashMessages.push_back("Startup complete!");
-
     //create command line processing thread
     pthread_t cmdThr;
     if(bShowCmdLine)
@@ -512,6 +494,7 @@ bail_out:
     }
     if(bShowCmdLine)
         tcsetattr(0, TCSANOW, &oldTerm);
+    munlockall(); // just to be sure
     if (bExitSuccess)
         exit(EXIT_SUCCESS);
     else

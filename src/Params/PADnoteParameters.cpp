@@ -19,7 +19,7 @@
     yoshimi; if not, write to the Free Software Foundation, Inc., 51 Franklin
     Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-    This file is a derivative of a ZynAddSubFX original, modified March 2011
+    This file is a derivative of a ZynAddSubFX original, modified February 2017
 */
 
 #include <cmath>
@@ -54,7 +54,7 @@ PADnoteParameters::PADnoteParameters(FFTwrapper *fft_, SynthEngine *_synth) : Pr
     AmpEnvelope->ADSRinit_dB(0, 40, 127, 25);
     AmpLfo = new LFOParams(80, 0, 64, 0, 0, 0, 0, 1, synth);
 
-    GlobalFilter = new FilterParams(2, 94, 40, synth);
+    GlobalFilter = new FilterParams(2, 94, 40, 0, synth);
     FilterEnvelope = new EnvelopeParams(0, 1, synth);
     FilterEnvelope->ADSRinit_filter(64, 40, 64, 70, 60, 64);
     FilterLfo = new LFOParams(80, 0, 64, 0, 0, 0, 0, 2, synth);
@@ -932,4 +932,41 @@ void PADnoteParameters::getfromXML(XMLwrapper *xml)
 
         xml->exitbranch();
     }
+}
+
+
+void PADnoteParameters::getLimits(CommandBlock *getData)
+{
+    int control = getData->data.control;
+
+    // defaults
+    getData->limits.min = 0;
+    getData->limits.max = 127;
+    getData->limits.def = 0;
+
+    switch (control)
+    {
+        case 16:
+            getData->limits.max = 1000;
+            break;
+        case 32:
+            getData->limits.min = -8192;
+            getData->limits.max = 8191;
+            break;
+        case 48:
+        case 49:
+        case 50:
+            getData->limits.max = 255;
+            break;
+    }
+}
+
+void PADnoteParameters::postrender(void)
+{
+    // loop over our gathered dirty flags and unset them for the next period
+      AmpLfo->updated
+    = FilterLfo->updated
+    = FreqLfo->updated
+    = false;
+
 }

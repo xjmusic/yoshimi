@@ -20,9 +20,13 @@
 #ifndef CMDINTERFACE_H
 #define CMDINTERFACE_H
 #include <string>
-#include <Misc/MiscFuncs.h>
-#include <Misc/SynthEngine.h>
-#include <Effects/EffectMgr.h>
+
+using namespace std;
+
+#include "Misc/MiscFuncs.h"
+#include "Misc/SynthEngine.h"
+#include "Interface/InterChange.h"
+#include "Effects/EffectMgr.h"
 
 extern map<SynthEngine *, MusicClient *> synthInstances;
 
@@ -41,13 +45,16 @@ class CmdInterface : private MiscFuncs
         bool query(string text, bool priority);
         void helpLoop(list<string>& msg, string *commands, int indent);
         bool helpList();
+        string historySelect(int listnum, int selection);
         void historyList(int listnum);
-        int effectsList();
+        int effectsList(bool presets = false);
         int effects();
-        int volPanShift();
+        int volPanVel();
+        int keyShift(int part);
         int commandVector();
         int commandPart(bool justSet);
         int commandReadnSet();
+        int sendDirect(float value, unsigned char type, unsigned char control, unsigned char part, unsigned char kit = 0xff, unsigned char engine = 0xff, unsigned char insert = 0xff, unsigned char parameter = 0xff, unsigned char par2 = 0xff);
         bool cmdIfaceProcessCommand();
         char *cCmd;
         char *point;

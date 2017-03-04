@@ -26,7 +26,14 @@ if (POLICY CMP0046)
 endif (POLICY CMP0046)
 set (CMAKE_CXX_STANDARD 11) # we seem to need both for
 add_definitions(-std=gnu++11) # various versions of cmake
-set (YOSHIMI_VERSION "1.4.0")
+
+add_definitions(-Wall)
+add_definitions(-Werror=format-security)
+
+# ^^^ comment these two out on release pushes ^^^
+
+set (YOSHIMI_VERSION "1.5.0 M")
+
 file (WRITE version.txt "${YOSHIMI_VERSION}")
 
 set (CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -66,7 +73,12 @@ endif (HasJackSession)
 
 option (BuildForAMD_X86_64 "Build for AMD x86_64 system" OFF)
 option (BuildForCore2_X86_64 "Build for Intel Core2 x86_64 system" OFF)
+option (BuildForNEON "Build for ARM Cortex A9 system" OFF)
 option (BuildForDebug "Include gdb debugging support" OFF)
+
+option (EnableGuiReports "Enable GUI control reports" OFF)
+
+option (ReportNoteOnTimes "Report Note-On Times" OFF)
 
 #option to build lv2 plugin
 option (BuildLV2Plugin "Build yoshimi lv2 plugin interface" ON)
@@ -81,6 +93,11 @@ set (BuildOptions_x86_64AMD
 set (BuildOptions_X86_64Core2
     "-O3 -march=core2 -m64 -Wall -ffast-math -fno-finite-math-only -fomit-frame-pointer"
   CACHE STRING "X86_64 compiler options"
+)
+
+set (BuildOptions_NEON
+"-03 -march=armv7-a -mfloat-abi=hard -mfpu=neon -mcpu=cortex-a9 -mtune=cortex-a9 -pipe -mvectorize-with-neon-quad -funsafe-loop-optimizations"
+  CACHE STRING "Cortex_a9 compiler options"
 )
 
 set (BuildOptionsBasic
@@ -191,18 +208,14 @@ mark_as_advanced (FLTK_FLUID_EXECUTABLE)
 mark_as_advanced (FLTK_MATH_LIBRARY)
 
 
-# libncurses
-pkg_check_modules (LIBNCURSES ncurses)
-if (LIBNCURSES_FOUND)
-    message (STATUS "Found libncurses ${LIBNCURSES_VERSION}")
-else ()
-    pkg_check_modules (LIBNCURSES REQUIRED ncursesw)
-    if (LIBNCURSES_FOUND)
-        message (STATUS "Found libncursesw ${LIBNCURSES_VERSION}")
-    else()
-        message (FATAL_ERROR "libncurses required but not found")
-    endif ()
-endif ()
+# libncurses / libcursesw
+set(CURSES_NEED_NCURSES TRUE)
+find_package (Curses REQUIRED)
+if (CURSES_FOUND)
+    message(STATUS "Found libncurses or libncursesw")
+else (CURSES_FOUND)
+    message(FATAL_ERROR "libncurses or libncursesw required but not found")
+endif (CURSES_FOUND)
 
 find_path(Readline_ROOT_DIR
     NAMES include/readline/readline.h
@@ -218,14 +231,15 @@ find_library(Readline_LIBRARY
     HINTS ${Readline_ROOT_DIR}/lib
 )
 
-if(Readline_INCLUDE_DIR AND Readline_LIBRARY AND Ncurses_LIBRARY)
+#find_package(PkgConfig REQUIRED)
+if(Readline_INCLUDE_DIR AND Readline_LIBRARY AND CURSES_LIBRARY)
   set(READLINE_FOUND TRUE)
-else(Readline_INCLUDE_DIR AND Readline_LIBRARY AND Ncurses_LIBRARY)
+else(Readline_INCLUDE_DIR AND Readline_LIBRARY AND CURSES_LIBRARY)
   FIND_LIBRARY(Readline_LIBRARY NAMES readline)
   include(FindPackageHandleStandardArgs)
   FIND_PACKAGE_HANDLE_STANDARD_ARGS(Readline DEFAULT_MSG Readline_INCLUDE_DIR Readline_LIBRARY )
   MARK_AS_ADVANCED(Readline_INCLUDE_DIR Readline_LIBRARY)
-endif(Readline_INCLUDE_DIR AND Readline_LIBRARY AND Ncurses_LIBRARY)
+endif(Readline_INCLUDE_DIR AND Readline_LIBRARY AND CURSES_LIBRARY)
 
 mark_as_advanced(
     Readline_ROOT_DIR
@@ -253,7 +267,11 @@ else (BuildForDebug)
         if (BuildForCore2_X86_64)
             set (CMAKE_CXX_FLAGS_RELEASE ${BuildOptions_X86_64Core2})
         else (BuildForCore2_X86_64)
-            set (CMAKE_CXX_FLAGS_RELEASE ${BuildOptionsBasic})
+            if (BuildForNEON)
+                set (CMAKE_CXX_FLAGS_RELEASE ${BuildOptions_NEON})
+            else (BuildForNEON)
+                set (CMAKE_CXX_FLAGS_RELEASE ${BuildOptionsBasic})
+            endif (BuildForNEON)
         endif (BuildForCore2_X86_64)
     endif (BuildForAMD_X86_64)
     message (STATUS "Building for ${CMAKE_BUILD_TYPE}, flags: ${CMAKE_CXX_FLAGS_RELEASE}")
@@ -277,8 +295,16 @@ set (Effects_sources
 )
 
 set (Misc_sources
-    Misc/ConfBuild.cpp  Misc/Config.cpp  Misc/SynthEngine.cpp  Misc/Bank.cpp
-    Misc/Microtonal.cpp   Misc/Part.cpp  Misc/XMLwrapper.cpp  Misc/MiscFuncs.cpp   Misc/WavFile.cpp   Misc/CmdInterface.cpp
+    Misc/ConfBuild.cpp  Misc/Config.cpp  Misc/SynthEngine.cpp  Misc/Bank.cpp  Misc/Splash.cpp
+    Misc/Microtonal.cpp   Misc/Part.cpp  Misc/XMLwrapper.cpp  Misc/MiscFuncs.cpp   Misc/WavFile.cpp
+)
+
+set (Interface_Sources
+    Interface/CmdInterface.cpp
+    Interface/InterChange.cpp
+    Interface/MidiLearn.cpp
+    Interface/MidiDecode.cpp
+    UI/MiscGui.cpp
 )
 
 set (Params_sources
@@ -300,14 +326,14 @@ set (MusicIO_sources
 )
 
 set (FltkUI_names
-    "WidgetPDialUI"  "PresetsUI"  "EnvelopeUI"
-    "LFOUI"  "FilterUI"  "VirKeyboardUI"
-    "ConfigUI"  "SUBnoteUI"  "ResonanceUI"
-    "OscilGenUI"  "ADnoteUI"  "PADnoteUI"
-    "EffUI"  "BankUI"  "PartUI"
-    "MicrotonalUI"  "MasterUI" "MasterMiscUI"
+    "WidgetPDialUI" "PresetsUI" "EnvelopeUI"
+    "LFOUI" "FilterUI" "VirKeyboardUI"
+    "ConfigUI" "SUBnoteUI" "ResonanceUI"
+    "OscilGenUI" "ADnoteUI" "PADnoteUI"
+    "EffUI" "BankUI" "PartUI"
+    "MicrotonalUI" "MasterUI" "MasterMiscUI"
     "ParametersUI" "ConsoleUI" "VectorUI"
-    "WidgetMWSliderUI" "WidgetMWRollerUI"
+    "MidiLearnUI" "WidgetMWSliderUI"
 )
 
 # workaround fltk_wrap_ui breakage
@@ -350,6 +376,7 @@ add_definitions (-DSUB_COLOUR=0xafcfdf00)
 add_definitions (-DPAD_COLOUR=0xcfdfaf00)
 add_definitions (-DNUM_MIDI_PARTS=64)
 add_definitions (-DNUM_MIDI_CHANNELS=16)
+add_definitions (-DMIDI_LEARN_BLOCK=128)
 add_definitions (-DMAX_ENVELOPE_POINTS=40)
 add_definitions (-DMIN_ENVELOPE_DB=-60)
 add_definitions (-DMAX_RESONANCE_POINTS=256)
@@ -371,6 +398,7 @@ add_definitions (-DXML_CONFIG=6)
 add_definitions (-DXML_BANK=7)
 add_definitions (-DXML_HISTORY=8)
 add_definitions (-DXML_VECTOR=9)
+add_definitions (-DXML_MIDILEARN=10)
 
 # these were previously (pointlessly) user configurable
 add_definitions (-DNUM_VOICES=8)
@@ -381,7 +409,7 @@ add_definitions (-DNUM_PART_EFX=3)
 add_definitions (-DNUM_KIT_ITEMS=16)
 add_definitions (-DVELOCITY_MAX_SCALE=8.0f)
 add_definitions (-DFADEIN_ADJUSTMENT_SCALE=20)
-add_definitions (-DMAX_EQ_BANDS=8) # MAX_EQ_BANDS must be less than 20")
+add_definitions (-DMAX_EQ_BANDS=8) # MAX_EQ_BANDS must be less than 20
 add_definitions (-DMAX_FILTER_STAGES=5)
 add_definitions (-DFF_MAX_VOWELS=6)
 add_definitions (-DFF_MAX_FORMANTS=12)
@@ -389,6 +417,13 @@ add_definitions (-DFF_MAX_SEQUENCE=8)
 add_definitions (-DMAX_PHASER_STAGES=12)
 add_definitions (-DMAX_ALIENWAH_DELAY=100)
 
+if (EnableGuiReports)
+    add_definitions (-DENABLE_REPORTS)
+endif (EnableGuiReports)
+
+if (ReportNoteOnTimes)
+    add_definitions (-DREPORT_NOTEON)
+endif (ReportNoteOnTimes)
 #if (${DefaultAudio} STREQUAL "jack")
 #    message(STATUS "Default audio driver is Jack")
     add_definitions(-DDEFAULT_AUDIO=jack_audio)
@@ -433,6 +468,7 @@ if (HasJackLatency)
 endif (HasJackLatency)
 
 set (ProgSources
+    ${Interface_Sources}
     ${Misc_sources}
     ${Params_sources}
     ${Synth_sources}
@@ -464,8 +500,8 @@ set(ExternLibraries
     ${LIBSNDFILE_LIBRARIES}
     ${FFTW3F_LIBRARIES}
     ${LIBCAIRO_LIBRARIES}
+    ${CURSES_LIBRARIES}
     ${Readline_LIBRARY}
-    ncurses
     z
     dl
 )
