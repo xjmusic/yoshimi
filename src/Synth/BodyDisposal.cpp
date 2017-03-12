@@ -21,9 +21,8 @@
 
 void BodyDisposal::addBody(Carcass *body)
 {
-    std::list<Carcass*>* corpses = &corpsePile[ (inFront ? 0 : 1) ];
     if (body != NULL)
-        corpses->push_back(body);
+        corpsePile[ (inFront ? 0 : 1) ].push_back(body);
 }
 
 
