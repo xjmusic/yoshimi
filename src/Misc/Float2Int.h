@@ -32,7 +32,7 @@ class Float2Int {
 };
 
 inline const int Float2Int::float2int(const float val) const
-    { return (int)((isgreater(val, 0.0f)) ? (int)truncf(val) : (int)truncf((val - 1.0f))); }
+    { return (int)((std::isgreater(val, 0.0f)) ? (int)truncf(val) : (int)truncf((val - 1.0f))); }
     // for rationale, see <http://www.mega-nerd.com/FPcast/>
 
 #endif

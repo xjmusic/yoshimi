@@ -20,9 +20,7 @@
 #ifndef CARCASS_H
 #define CARCASS_H
 
-#include <boost/noncopyable.hpp>
-
-class Carcass : public boost::noncopyable
+class Carcass
 {
     public:
         virtual ~Carcass() {}
