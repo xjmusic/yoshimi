@@ -35,7 +35,6 @@ class BodyDisposal
         ~BodyDisposal() {}
         void addBody(Carcass *body);
         void disposeBodies(void);
-        void flap(void);
 
     private:
         std::atomic<bool> inFront;

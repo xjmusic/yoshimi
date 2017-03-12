@@ -35,11 +35,7 @@ void BodyDisposal::disposeBodies(void)
         delete corpses->front();
         corpses->pop_front();
     }
-    flap();
-}
 
-void BodyDisposal::flap(void)
-{
     // flip / swap / trade back and front buffers.
     // the boolean answers the question, 'where do new bodies *go* right now?'
     // since the adding or disposing always derives from this atomic variable,
