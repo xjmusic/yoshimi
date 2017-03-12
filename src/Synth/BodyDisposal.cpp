@@ -21,16 +21,31 @@
 
 void BodyDisposal::addBody(Carcass *body)
 {
+    std::list<Carcass*>* corpses = &corpsePile[ (inFront ? 0 : 1) ];
     if (body != NULL)
-        corpses.push_back(body);
+        corpses->push_back(body);
 }
 
 
 void BodyDisposal::disposeBodies(void)
 {
-    for (int x = corpses.size(); x > 0; --x)
+    // during mainGuiThread loop
+    std::list<Carcass*>* corpses = &corpsePile[ (inFront ? 1 : 0) ];
+    for (int x = corpses->size(); x > 0; --x)
     {
-        delete corpses.front();
-        corpses.pop_front();
+        delete corpses->front();
+        corpses->pop_front();
     }
+    flap();
+}
+
+void BodyDisposal::flap(void)
+{
+    // flip / swap / trade back and front buffers.
+    // the boolean answers the question, 'where do new bodies *go* right now?'
+    // since the adding or disposing always derives from this atomic variable,
+    // it makes the change effectively simultaneous across N threads/cores/etc
+    // (see "High-Performance and Scalable Updates - The Issaquah Challenge")
+    // so we get atomic double buffering. Thanks Paul McKenney for the clues
+    inFront = !inFront;
 }

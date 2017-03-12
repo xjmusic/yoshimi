@@ -22,6 +22,7 @@
 
 #include <list>
 #include <cstddef>
+#include <atomic>
 
 using namespace std;
 
@@ -30,13 +31,15 @@ using namespace std;
 class BodyDisposal
 {
     public:
-        BodyDisposal() { corpses.clear(); }
+        BodyDisposal() { inFront = true; corpsePile[0].clear(); corpsePile[1].clear(); }
         ~BodyDisposal() {}
         void addBody(Carcass *body);
         void disposeBodies(void);
+        void flap(void);
 
     private:
-        std::list<Carcass*> corpses;
+        std::atomic<bool> inFront;
+        list<Carcass*> corpsePile[2];
 };
 
 #endif
