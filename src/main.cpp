@@ -179,6 +179,7 @@ static void *mainGuiThread(void *arg)
                 {
                     _synth->saveBanks(tmpID);
                     _synth->getRuntime().deadObjects->disposeBodies();
+                    _synth->getRuntime().deadObjects->disposeBodies();  // empty both lists
                     _synth->getRuntime().flushLog();
                     delete _synth;
                 }
@@ -435,6 +436,7 @@ bail_out:
         if (_synth)
         {
             _synth->getRuntime().deadObjects->disposeBodies();
+            _synth->getRuntime().deadObjects->disposeBodies();  //empty both lists
             _synth->getRuntime().flushLog();
             delete _synth;
         }

@@ -32,7 +32,7 @@ class BodyDisposal
 {
     public:
         BodyDisposal() { inFront = true; corpsePile[0].clear(); corpsePile[1].clear(); }
-        ~BodyDisposal() {}
+        ~BodyDisposal() { disposeBodies(); disposeBodies(); }  // empty both lists
         void addBody(Carcass *body);
         void disposeBodies(void);
 
