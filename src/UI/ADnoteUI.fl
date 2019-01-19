@@ -407,11 +407,11 @@ send_data(ADDVOICE::control::modulatorFrequencyAs440Hz, o->value(), TOPLEVEL::ty
                     int nv = nvoice;
                     if (pars->VoicePar[nvoice].PextFMoscil >= 0)
                         nv = pars->VoicePar[nvoice].PextFMoscil;
-                    oscedit = new OscilEditor(pars->VoicePar[nv].FMSmp, fmoscil, NULL, NULL, synth, npart, kititem, nvoice + PART::engine::addMod1);
+                    oscedit = new OscilEditor(pars->VoicePar[nv].FMSmp, fmoscil, NULL, NULL, synth, npart, kititem, nv + PART::engine::addMod1);
                     if ((Fl::event_button() == 3))
                         synth->getGuiMaster()->partui->adnoteui->ADnoteVoice->hide();}
                 xywh {666 372 62 12} box THIN_UP_BOX labelfont 1 labelsize 9
-                code0 {if (pars->VoicePar[nvoice].PextFMoscil>=0) o->labelcolor(FL_BLUE);}
+                code0 {if (pars->VoicePar[nvoice].PextFMoscil>=0) { o->labelcolor(FL_BLUE);char wvf[11]; snprintf(wvf, 11, "<< M%d WF", pars->VoicePar[nvoice].PextFMoscil+1); o->label(strdup(wvf)); } }
               }
               Fl_Slider ModPhase {
                 label Phase
@@ -631,11 +631,11 @@ send_data(ADDVOICE::control::pitchBendOffset, o->value(), TOPLEVEL::type::Intege
     int nv = nvoice;
     if (pars->VoicePar[nvoice].Pextoscil >= 0)
         nv=pars->VoicePar[nvoice].Pextoscil;
-    oscedit = new OscilEditor(pars->VoicePar[nv].OscilSmp, voiceoscil, NULL, NULL, synth, npart, kititem, nvoice + PART::engine::addVoice1);
+    oscedit = new OscilEditor(pars->VoicePar[nv].OscilSmp, voiceoscil, NULL, NULL, synth, npart, kititem, nv + PART::engine::addVoice1);
     if ((Fl::event_button() == 3))
         synth->getGuiMaster()->partui->adnoteui->ADnoteVoice->hide();}
             xywh {5 535 72 20} box THIN_UP_BOX labelfont 1 labelsize 11
-            code0 {if (pars->VoicePar[nvoice].Pextoscil>=0) o->labelcolor(FL_BLUE);}
+            code0 {if (pars->VoicePar[nvoice].Pextoscil>=0) { o->labelcolor(FL_BLUE);char wvf[11]; snprintf(wvf, 11, "<< V%d WF", pars->VoicePar[nvoice].Pextoscil+1); o->label(strdup(wvf)); } }
           }
           Fl_Box {} {
             label Oscillator
@@ -981,7 +981,8 @@ o->show();}
     code {//
         nvoice = 0;
         pars = NULL;
-        oscedit = NULL;} {}
+        oscedit = NULL;
+        } {}
   }
   Function {send_data(int control, float value, int type)} {} {
     code {//
@@ -1289,9 +1290,15 @@ o->show();}
             {
                 tmp = voice;
                 changeFMoscilbutton->labelcolor(FL_BLACK);
+                changeFMoscilbutton->label("Waveform");
             }
             else
+            {
                 changeFMoscilbutton->labelcolor(FL_BLUE);
+                char wvf[11];
+                snprintf(wvf, 11, "<< M%d WF", tmp + 1);
+                changeFMoscilbutton->label(strdup(wvf));
+            }
             oscFM->init(pars->VoicePar[tmp].FMSmp, synth);
             voiceFMparametersgroup->redraw();
             break;
@@ -1341,9 +1348,15 @@ o->show();}
             {
                 tmp = voice;
                 changevoiceoscilbutton->labelcolor(FL_BLACK);
+                changevoiceoscilbutton->label("Waveform");
             }
             else
+            {
                 changevoiceoscilbutton->labelcolor(FL_BLUE);
+                char wvf[11];
+                snprintf(wvf, 11, "<< V%d WF", tmp + 1);
+                changevoiceoscilbutton->label(strdup(wvf));
+            }
             changevoiceoscilbutton->redraw();
             osc->init(pars->VoicePar[tmp].OscilSmp, synth);
             osc->redraw();
@@ -1382,9 +1395,8 @@ o->show();}
         ADnoteVoiceParameters->hide();
         hide();
         if (oscedit)
-        {
             delete oscedit;
-        }} {}
+        } {}
   }
   decl {int nvoice;} {public local
   }

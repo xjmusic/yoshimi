@@ -1,5 +1,11 @@
 yoshimi 1.5.10.1
 
+2019-1-19 Rob
+* Begin rationalizing waveform selection in ADnoteUI:
+  both "Waveform" button in ADnote and window title of
+  OscilGen UI now reflect the voice number actually
+  being edited, for both Voice and Modulator sections
+
 2019-1-13 Will.
 * Confirmed previous fix and set release as 1.5.10.1
 
