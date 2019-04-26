@@ -21,7 +21,7 @@
 */
 
 #ifndef RINGBUFF_H
-#define FILEMGR_H
+#define RINGBUFF_H
 
 #include <atomic>
 #include <stdlib.h>

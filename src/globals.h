@@ -950,7 +950,6 @@ namespace EFFECT // usage EFFECT::type::none
 union CommandBlock{
     struct{
         float value;
-//        unsigned char source;
         unsigned char type;
         unsigned char source;
         unsigned char control;
@@ -966,5 +965,6 @@ union CommandBlock{
     } data;
     char bytes [sizeof(data)];
 };
+const size_t commandBlockSize = 16;
 
 #endif

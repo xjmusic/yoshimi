@@ -17,7 +17,7 @@
     yoshimi; if not, write to the Free Software Foundation, Inc., 51 Franklin
     Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-    Modified February 2019
+    Modified April 2019
 */
 
 #ifndef INTERCH_H
@@ -27,6 +27,7 @@
 
 using namespace std;
 
+#include "globals.h"
 #include "Misc/MiscFuncs.h"
 #include "Interface/FileMgr.h"
 #include "Interface/RingBuffer.h"
@@ -49,14 +50,12 @@ class InterChange : private MiscFuncs, FileMgr
         bool Init();
 
         CommandBlock commandData;
-        size_t commandSize = sizeof(commandData);
 
         jack_ringbuffer_t *fromCLI;
         jack_ringbuffer_t *decodeLoopback;
         jack_ringbuffer_t *fromGUI;
         jack_ringbuffer_t *toGUI;
-        jack_ringbuffer_t *fromMIDI;
-        //jack_ringbuffer_t *returnsBuffer;
+        ringBuff *fromMIDI;
         ringBuff *returnsBuffer;
 
         void mediate(void);

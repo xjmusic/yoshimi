@@ -1,7 +1,7 @@
 /*
     MidiDecode.cpp
 
-    Copyright 2017-2018 Will Godfrey
+    Copyright 2017-2019 Will Godfrey
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -17,7 +17,7 @@
     yoshimi; if not, write to the Free Software Foundation, Inc., 51 Franklin
     Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-    Modified December 2018
+    Modified April
 */
 
 #include <iostream>
@@ -37,8 +37,7 @@ using namespace std;
 MidiDecode::MidiDecode(SynthEngine *_synth) :
     synth(_synth)
 {
- //init
-
+    //init
 }
 
 
@@ -230,7 +229,7 @@ void MidiDecode::sendMidiCC(bool inSync, unsigned char chan, int type, short int
     putData.data.part = TOPLEVEL::section::midiIn;
     putData.data.kit = chan;
     putData.data.engine = type;
-    synth->midilearn.writeMidi(&putData, sizeof(putData), false);
+    synth->midilearn.writeMidi(&putData, false);
 }
 
 /*
@@ -570,7 +569,7 @@ void MidiDecode::nrpnDirectPart(int dHigh, int par)
     //cout << "part " << int(putData.data.part) << "  Chan " << int(par) << endl;
     putData.data.type = 0xd0;
 
-    synth->midilearn.writeMidi(&putData, sizeof(putData), false);
+    synth->midilearn.writeMidi(&putData, false);
 }
 
 
@@ -640,7 +639,7 @@ void MidiDecode::setMidiBankOrRootDir(unsigned int bank_or_root_num, bool in_pla
     if (in_place)
         synth->SetRBP(&putData, false);
     else
-        synth->midilearn.writeMidi(&putData, sizeof(putData), false);
+        synth->midilearn.writeMidi(&putData, false);
 }
 
 
@@ -682,7 +681,7 @@ void MidiDecode::setMidiProgram(unsigned char ch, int prg, bool in_place)
                 }
                 else
                 {
-                    synth->midilearn.writeMidi(&putData, sizeof(putData), false);
+                    synth->midilearn.writeMidi(&putData, false);
                 }
             }
         }
@@ -697,7 +696,7 @@ void MidiDecode::setMidiProgram(unsigned char ch, int prg, bool in_place)
             synth->SetRBP(&putData, false);
         }
         else
-            synth->midilearn.writeMidi(&putData, sizeof(putData), false);
+            synth->midilearn.writeMidi(&putData, false);
     }
 }
 

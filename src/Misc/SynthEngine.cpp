@@ -749,7 +749,7 @@ void SynthEngine::SetZynControls(bool in_place)
     if (in_place)
         interchange.commandEffects(&putData);
     else // TODO next line is a hack!
-        midilearn.writeMidi(&putData, sizeof(putData), false);
+        midilearn.writeMidi(&putData, false);
 }
 
 
@@ -1692,7 +1692,7 @@ void SynthEngine::vectorSet(int dHigh, unsigned char chan, int par)
         putData.data.part = TOPLEVEL::section::midiIn;
         putData.data.kit = part;
         putData.data.parameter = TOPLEVEL::route::adjustAndLoopback;
-        midilearn.writeMidi(&putData, sizeof(putData), true);
+        midilearn.writeMidi(&putData, true);
     }
 }
 

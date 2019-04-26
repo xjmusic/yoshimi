@@ -79,7 +79,7 @@ bool InterChange::Init()
 {
     flagsValue = 0xffffffff;
     //ringBuff *returnsBuffer;
-    if (!(fromCLI = jack_ringbuffer_create(sizeof(commandSize) * 256)))
+    if (!(fromCLI = jack_ringbuffer_create(commandBlockSize * 256)))
     {
         synth->getRuntime().Log("InterChange failed to create 'fromCLI' ringbuffer");
         goto bail_out;
@@ -91,7 +91,7 @@ bool InterChange::Init()
     }
     jack_ringbuffer_reset(fromCLI);
 
-    if (!(decodeLoopback = jack_ringbuffer_create(sizeof(commandSize) * 512)))
+    if (!(decodeLoopback = jack_ringbuffer_create(sizeof(commandBlockSize) * 512)))
     {
         synth->getRuntime().Log("InterChange failed to create 'decodeLoopback' ringbuffer");
         goto bail_out;
@@ -103,7 +103,7 @@ bool InterChange::Init()
     }
     jack_ringbuffer_reset(decodeLoopback);
 #ifdef GUI_FLTK
-    if (!(fromGUI = jack_ringbuffer_create(sizeof(commandSize) * 1024)))
+    if (!(fromGUI = jack_ringbuffer_create(commandBlockSize * 1024)))
     {
         synth->getRuntime().Log("InterChange failed to create 'fromGUI' ringbuffer");
         goto bail_out;
@@ -115,7 +115,7 @@ bool InterChange::Init()
     }
     jack_ringbuffer_reset(fromGUI);
 #ifdef GUI_FLTK
-    if (!(toGUI = jack_ringbuffer_create(sizeof(commandSize) * 1024)))
+    if (!(toGUI = jack_ringbuffer_create(sizeof(commandBlockSize) * 1024)))
     {
         synth->getRuntime().Log("InterChange failed to create 'toGUI' ringbuffer");
         goto bail_out;
@@ -128,19 +128,9 @@ bool InterChange::Init()
     }
     jack_ringbuffer_reset(toGUI);
 #endif
-    if (!(fromMIDI = jack_ringbuffer_create(sizeof(commandSize) * 1024)))
-    {
-        synth->getRuntime().Log("InterChange failed to create 'fromMIDI' ringbuffer");
-        goto bail_out;
-    }
-    if (jack_ringbuffer_mlock(fromMIDI))
-    {
-        synth->getRuntime().Log("Failed to lock fromMIDI memory");
-        goto bail_out;
-    }
-    jack_ringbuffer_reset(fromMIDI);
+    fromMIDI = new ringBuff(1024, commandBlockSize);
 
-    returnsBuffer = new ringBuff(1024, 16);
+    returnsBuffer = new ringBuff(1024, commandBlockSize);
 
     if (!synth->getRuntime().startThread(&sortResultsThreadHandle, _sortResultsThread, this, false, 0, "CLI"))
     {
@@ -173,12 +163,7 @@ bail_out:
         toGUI = NULL;
     }
 #endif
-    if (fromMIDI)
-    {
-        jack_ringbuffer_free(fromMIDI);
-        fromMIDI = NULL;
-    }
-
+    delete(fromMIDI);
     delete(returnsBuffer);
     return false;
 }
@@ -230,9 +215,9 @@ void *InterChange::sortResultsThread(void)
 
         CommandBlock getData;
         char *point;
-        while (jack_ringbuffer_read_space(synth->interchange.decodeLoopback)  >= synth->interchange.commandSize)
+        while (jack_ringbuffer_read_space(synth->interchange.decodeLoopback)  >= commandBlockSize)
         {
-            int toread = commandSize;
+            int toread = commandBlockSize;
             point = (char*) &getData.bytes;
             jack_ringbuffer_read(decodeLoopback, point, toread);
             if(getData.data.part == TOPLEVEL::section::midiLearn) // special midi-learn - needs improving
@@ -286,7 +271,7 @@ InterChange::~InterChange()
 #endif
     if (fromMIDI)
     {
-        jack_ringbuffer_free(fromMIDI);
+        delete(fromMIDI);
         fromMIDI = NULL;
     }
 }
@@ -321,7 +306,6 @@ void InterChange::indirectTransfers(CommandBlock *getData)
     int switchNum = npart;
     if (control == TOPLEVEL::control::errorMessage && insert != TOPLEVEL::insert::resonanceGraphInsert)
         switchNum = 256; // this is a bit hacky :(
-    //bool testThing = false;
 
     switch(switchNum)
     {
@@ -979,33 +963,23 @@ void InterChange::indirectTransfers(CommandBlock *getData)
     __sync_and_and_fetch(&blockRead, 0xfd);
     if (getData->data.parameter < TOPLEVEL::route::lowPriority)
     {
-        //if (testThing)
-            //cout << "test " << value << endl;
-        //if (jack_ringbuffer_write_space(returnsBuffer) >= commandSize)
-        //{
             getData->data.value = float(value);
 #ifdef GUI_FLTK
             if (synth->getRuntime().showGui && write && guiTo)
                 getData->data.par2 = miscMsgPush(text); // pass it on to GUI
 #endif
-            //jack_ringbuffer_write(returnsBuffer, (char*) getData->bytes, commandSize);
             returnsBuffer->write(getData->bytes);
 #ifdef GUI_FLTK
             if (synth->getRuntime().showGui && npart == TOPLEVEL::section::scales && control == SCALES::control::importScl)
             {   // loading a tuning includes a name and comment!
                 getData->data.control = SCALES::control::name;
                 getData->data.par2 = miscMsgPush(synth->microtonal.Pname);
-                //jack_ringbuffer_write(returnsBuffer, (char*) getData->bytes, commandSize);
                 returnsBuffer->write(getData->bytes);
                 getData->data.control = SCALES::control::comment;
                 getData->data.par2 = miscMsgPush(synth->microtonal.Pcomment);
-                //jack_ringbuffer_write(returnsBuffer, (char*) getData->bytes, commandSize);
                 returnsBuffer->write(getData->bytes);
             }
 #endif
-        //}
-        //else
-            //synth->getRuntime().Log("Unable to  write to returnsBuffer buffer");
     }
 }
 
@@ -3846,7 +3820,7 @@ string InterChange::resolveEffects(CommandBlock *getData)
 void InterChange::mediate()
 {
     CommandBlock getData;
-    size_t commandSize = sizeof(getData);
+    size_t commandSize = commandBlockSize;
     bool more;
     size_t size;
     int toread;
@@ -3881,35 +3855,30 @@ void InterChange::mediate()
             returns(&getData);
         }
 #endif
-        size = jack_ringbuffer_read_space(fromMIDI);
-        if (size >= commandSize)
+        if (fromMIDI->read(getData.bytes))
         {
-            if (size > commandSize)
-                more = true;
-            toread = commandSize;
-            point = (char*) &getData.bytes;
-            jack_ringbuffer_read(fromMIDI, point, toread);
+            more = true;
             if(getData.data.part != TOPLEVEL::section::midiLearn) // Not special midi-learn message
             {
                 commandSend(&getData);
                 returns(&getData);
             }
+        }
 #ifdef GUI_FLTK
-            else if (getData.data.control == MIDILEARN::control::reportActivity)
-            {
-                if (jack_ringbuffer_write_space(toGUI) >= commandSize)
-                jack_ringbuffer_write(toGUI, (char*) getData.bytes, commandSize);
-            }
+        else if (getData.data.control == MIDILEARN::control::reportActivity)
+        {
+            if (jack_ringbuffer_write_space(toGUI) >= commandSize)
+            jack_ringbuffer_write(toGUI, (char*) getData.bytes, commandSize);
+        }
 #endif
-            else if (getData.data.control == TOPLEVEL::section::midiLearn) // not part!
-            {
-                synth->mididecode.midiProcess(getData.data.kit, getData.data.engine, getData.data.insert, false);
-            }
+        else if (getData.data.control == TOPLEVEL::section::midiLearn) // not part!
+        {
+            synth->mididecode.midiProcess(getData.data.kit, getData.data.engine, getData.data.insert, false);
         }
         if (returnsBuffer->read(getData.bytes))
         {
             returns(&getData);
-            //more = true;
+            more = true;
         }
     }
     while (more && synth->getRuntime().runSynth);
@@ -3974,15 +3943,15 @@ void InterChange::returns(CommandBlock *getData)
         if (synth->guiMaster && isOKtoRedraw)
         {
             //cout << "writing to GUI" << endl;
-            if (jack_ringbuffer_write_space(toGUI) >= commandSize)
-                jack_ringbuffer_write(toGUI, (char*) getData->bytes, commandSize);
+            if (jack_ringbuffer_write_space(toGUI) >= commandBlockSize)
+                jack_ringbuffer_write(toGUI, (char*) getData->bytes, commandBlockSize);
             else
                 synth->getRuntime().Log("Unable to write to toGUI buffer");
         }
 #endif
     }
-    if (jack_ringbuffer_write_space(decodeLoopback) >= commandSize)
-        jack_ringbuffer_write(decodeLoopback, (char*) getData->bytes, commandSize);
+    if (jack_ringbuffer_write_space(decodeLoopback) >= commandBlockSize)
+        jack_ringbuffer_write(decodeLoopback, (char*) getData->bytes, commandBlockSize);
     else
         synth->getRuntime().Log("Unable to write to decodeLoopback buffer");
 }
