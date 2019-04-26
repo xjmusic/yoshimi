@@ -46,7 +46,6 @@ class MidiLearn : private MiscFuncs, FileMgr
         void add2XML(XMLwrapper *xml);
         void getfromXML(XMLwrapper *xml);
         CommandBlock commandData;
-        size_t commandSize = commandBlockSize;
 
         struct Control{
             unsigned char type;

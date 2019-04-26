@@ -5731,7 +5731,6 @@ int CmdInterface::sendNormal(float value, unsigned char type, unsigned char cont
     }
 
     CommandBlock putData;
-    size_t commandSize = commandBlockSize;
 
     putData.data.value = value;
     putData.data.type = type;
@@ -5793,7 +5792,6 @@ int CmdInterface::sendDirect(float value, unsigned char type, unsigned char cont
     if (type >= TOPLEVEL::type::Limits && type <= TOPLEVEL::source::CLI)
         request = type & TOPLEVEL::type::Default;
     CommandBlock putData;
-    size_t commandSize = commandBlockSize;
 
     putData.data.value = value;
     putData.data.control = control;
