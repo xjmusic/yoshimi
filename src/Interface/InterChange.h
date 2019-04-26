@@ -52,7 +52,7 @@ class InterChange : private MiscFuncs, FileMgr
         CommandBlock commandData;
 
         jack_ringbuffer_t *fromCLI;
-        jack_ringbuffer_t *decodeLoopback;
+        ringBuff *decodeLoopback;
         jack_ringbuffer_t *fromGUI;
         jack_ringbuffer_t *toGUI;
         ringBuff *fromMIDI;

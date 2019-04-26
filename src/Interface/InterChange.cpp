@@ -91,17 +91,7 @@ bool InterChange::Init()
     }
     jack_ringbuffer_reset(fromCLI);
 
-    if (!(decodeLoopback = jack_ringbuffer_create(sizeof(commandBlockSize) * 512)))
-    {
-        synth->getRuntime().Log("InterChange failed to create 'decodeLoopback' ringbuffer");
-        goto bail_out;
-    }
-    if (jack_ringbuffer_mlock(decodeLoopback))
-    {
-        synth->getRuntime().Log("Failed to lock decodeLoopback memory");
-        goto bail_out;
-    }
-    jack_ringbuffer_reset(decodeLoopback);
+    decodeLoopback = new ringBuff(1024, commandBlockSize);
 #ifdef GUI_FLTK
     if (!(fromGUI = jack_ringbuffer_create(commandBlockSize * 1024)))
     {
@@ -148,7 +138,7 @@ bail_out:
     }
     if (decodeLoopback)
     {
-        jack_ringbuffer_free(decodeLoopback);
+        delete(decodeLoopback);
         decodeLoopback = NULL;
     }
 #ifdef GUI_FLTK
@@ -214,12 +204,8 @@ void *InterChange::sortResultsThread(void)
         }
 
         CommandBlock getData;
-        char *point;
-        while (jack_ringbuffer_read_space(synth->interchange.decodeLoopback)  >= commandBlockSize)
+        while (decodeLoopback->read(getData.bytes))
         {
-            int toread = commandBlockSize;
-            point = (char*) &getData.bytes;
-            jack_ringbuffer_read(decodeLoopback, point, toread);
             if(getData.data.part == TOPLEVEL::section::midiLearn) // special midi-learn - needs improving
                 synth->midilearn.generalOpps(getData.data.value, getData.data.type, getData.data.control, getData.data.part, getData.data.kit, getData.data.engine, getData.data.insert, getData.data.parameter, getData.data.par2);
             else if ((getData.data.parameter >= TOPLEVEL::route::lowPriority) && getData.data.parameter < UNUSED)
@@ -254,7 +240,7 @@ InterChange::~InterChange()
     }
     if (decodeLoopback)
     {
-        jack_ringbuffer_free(decodeLoopback);
+        delete(decodeLoopback);
         decodeLoopback = NULL;
     }
 #ifdef GUI_FLTK
@@ -3863,14 +3849,14 @@ void InterChange::mediate()
                 commandSend(&getData);
                 returns(&getData);
             }
-        }
 #ifdef GUI_FLTK
-        else if (getData.data.control == MIDILEARN::control::reportActivity)
-        {
-            if (jack_ringbuffer_write_space(toGUI) >= commandSize)
-            jack_ringbuffer_write(toGUI, (char*) getData.bytes, commandSize);
-        }
+            else if (getData.data.control == MIDILEARN::control::reportActivity)
+            {
+                if (jack_ringbuffer_write_space(toGUI) >= commandSize)
+                jack_ringbuffer_write(toGUI, (char*) getData.bytes, commandSize);
+            }
 #endif
+        }
         else if (getData.data.control == TOPLEVEL::section::midiLearn) // not part!
         {
             synth->mididecode.midiProcess(getData.data.kit, getData.data.engine, getData.data.insert, false);
@@ -3950,9 +3936,7 @@ void InterChange::returns(CommandBlock *getData)
         }
 #endif
     }
-    if (jack_ringbuffer_write_space(decodeLoopback) >= commandBlockSize)
-        jack_ringbuffer_write(decodeLoopback, (char*) getData->bytes, commandBlockSize);
-    else
+    if (!decodeLoopback->write(getData->bytes))
         synth->getRuntime().Log("Unable to write to decodeLoopback buffer");
 }
 
