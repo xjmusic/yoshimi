@@ -31,7 +31,7 @@ ringBuff::ringBuff(uint _bufferSize, uint _blockSize):
     blockSize(_blockSize)
 {
     mask = bufferSize - 1;
-    buffer = new uint8_t[bufferSize * blockSize];
+    buffer = new char[bufferSize * blockSize];
     //std::cout << "block size " << int(blockSize) << endl;
 }
 
@@ -41,7 +41,7 @@ ringBuff::~ringBuff()
     buffer = NULL;
 }
 
-bool ringBuff::write(uint8_t *writeData)
+bool ringBuff::write(char *writeData)
 {
     uint32_t write = writePoint.load(std::memory_order_acquire);
     uint32_t read = readPoint.load(std::memory_order_relaxed);
@@ -53,7 +53,7 @@ bool ringBuff::write(uint8_t *writeData)
     return true;
 }
 
-bool ringBuff::read(uint8_t *readData)
+bool ringBuff::read(char *readData)
 {
     uint32_t write = writePoint.load(std::memory_order_relaxed);
     uint32_t read = readPoint.load(std::memory_order_acquire);

@@ -29,6 +29,7 @@ using namespace std;
 
 #include "Misc/MiscFuncs.h"
 #include "Interface/FileMgr.h"
+#include "Interface/RingBuffer.h"
 #include "Params/LFOParams.h"
 #include "Params/FilterParams.h"
 #include "Params/EnvelopeParams.h"
@@ -55,7 +56,8 @@ class InterChange : private MiscFuncs, FileMgr
         jack_ringbuffer_t *fromGUI;
         jack_ringbuffer_t *toGUI;
         jack_ringbuffer_t *fromMIDI;
-        jack_ringbuffer_t *returnsBuffer;
+        //jack_ringbuffer_t *returnsBuffer;
+        ringBuff *returnsBuffer;
 
         void mediate(void);
         void mutedDecode(unsigned int altData);

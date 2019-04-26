@@ -35,13 +35,13 @@ class ringBuff
         std::atomic <uint> writePoint{0};
         uint32_t bufferSize;
         uint32_t mask;
-        uint8_t *buffer;
+        char *buffer;
         uint8_t blockSize;
     public:
         ringBuff(uint _bufferSize, uint _blockSize);
         ~ringBuff();
-        bool write(uint8_t *writeData);
-        bool read(uint8_t *readData);
+        bool write(char *writeData);
+        bool read(char *readData);
 };
 
 #endif
