@@ -5775,10 +5775,9 @@ int CmdInterface::sendNormal(float value, unsigned char type, unsigned char cont
     }
 
     putData.data.type = type;
-    if (jack_ringbuffer_write_space(synth->interchange.fromCLI) >= commandSize)
+    if (synth->interchange.fromCLI->write(putData.bytes))
     {
         synth->getRuntime().finishedCLI = false;
-        jack_ringbuffer_write(synth->interchange.fromCLI, (char*) putData.bytes, commandSize);
     }
     else
     {
@@ -5893,10 +5892,9 @@ int CmdInterface::sendDirect(float value, unsigned char type, unsigned char cont
         return 0;
     }
 
-    if (jack_ringbuffer_write_space(synth->interchange.fromCLI) >= commandSize)
+    if (synth->interchange.fromCLI->write(putData.bytes))
     {
         synth->getRuntime().finishedCLI = false;
-        jack_ringbuffer_write(synth->interchange.fromCLI, (char*) putData.bytes, commandSize);
     }
     else
         synth->getRuntime().Log("Unable to write to fromCLI buffer");

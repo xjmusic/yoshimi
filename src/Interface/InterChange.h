@@ -51,7 +51,7 @@ class InterChange : private MiscFuncs, FileMgr
 
         CommandBlock commandData;
 
-        jack_ringbuffer_t *fromCLI;
+        ringBuff *fromCLI;
         ringBuff *decodeLoopback;
         ringBuff *fromGUI;
         ringBuff *toGUI;

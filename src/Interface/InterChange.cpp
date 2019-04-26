@@ -78,22 +78,11 @@ InterChange::InterChange(SynthEngine *_synth) :
 bool InterChange::Init()
 {
     flagsValue = 0xffffffff;
-    //ringBuff *returnsBuffer;
-    if (!(fromCLI = jack_ringbuffer_create(commandBlockSize * 256)))
-    {
-        synth->getRuntime().Log("InterChange failed to create 'fromCLI' ringbuffer");
-        goto bail_out;
-    }
-    if (jack_ringbuffer_mlock(fromCLI))
-    {
-        synth->getRuntime().LogError("Failed to lock fromCLI memory");
-        goto bail_out;
-    }
-    jack_ringbuffer_reset(fromCLI);
 
+    fromCLI = new ringBuff(256, commandBlockSize);
     decodeLoopback = new ringBuff(1024, commandBlockSize);
 #ifdef GUI_FLTK
-    fromGUI = new ringBuff(1024, commandBlockSize);
+    fromGUI = new ringBuff(512, commandBlockSize);
     toGUI = new ringBuff(1024, commandBlockSize);
 #endif
     fromMIDI = new ringBuff(1024, commandBlockSize);
@@ -111,7 +100,7 @@ bool InterChange::Init()
 bail_out:
     if (fromCLI)
     {
-        jack_ringbuffer_free(fromCLI);
+        delete(fromCLI);
         fromCLI = NULL;
     }
     if (decodeLoopback)
@@ -221,7 +210,7 @@ InterChange::~InterChange()
 
     if (fromCLI)
     {
-        jack_ringbuffer_free(fromCLI);
+        delete(fromCLI);
         fromCLI = NULL;
     }
     if (decodeLoopback)
@@ -3792,22 +3781,13 @@ string InterChange::resolveEffects(CommandBlock *getData)
 void InterChange::mediate()
 {
     CommandBlock getData;
-    size_t commandSize = commandBlockSize;
     bool more;
-    size_t size;
-    int toread;
-    char *point;
     do
     {
         more = false;
-        size = jack_ringbuffer_read_space(fromCLI);
-        if (size >= commandSize)
+        if (fromCLI->read(getData.bytes))
         {
-            if (size > commandSize)
-                more = true;
-            toread = commandSize;
-            point = (char*) &getData.bytes;
-            jack_ringbuffer_read(fromCLI, point, toread);
+            more = true;
             if(getData.data.part != TOPLEVEL::section::midiLearn) // Not special midi-learn message
                 commandSend(&getData);
             returns(&getData);
@@ -3816,6 +3796,7 @@ void InterChange::mediate()
 
         if (fromGUI->read(getData.bytes))
         {
+            more = true;
             if(getData.data.part != TOPLEVEL::section::midiLearn) // Not special midi-learn message
                 commandSend(&getData);
             returns(&getData);
