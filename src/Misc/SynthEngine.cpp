@@ -1805,9 +1805,8 @@ void SynthEngine::SetMuteAndWait(void)
     putData.data.control = TOPLEVEL::control::errorMessage;
     putData.data.part = TOPLEVEL::section::main;
 #ifdef GUI_FLTK
-    if (jack_ringbuffer_write_space(interchange.fromGUI) >= sizeof(putData))
+    if (interchange.fromGUI ->write(putData.bytes))
     {
-        jack_ringbuffer_write(interchange.fromGUI, (char*) putData.bytes, sizeof(putData));
         while(isMuted() == 0)
             usleep (1000);
     }

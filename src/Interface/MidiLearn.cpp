@@ -715,26 +715,18 @@ void MidiLearn::writeToGui(CommandBlock *putData)
     if (!synth->getRuntime().showGui)
         return;
     putData->data.part = TOPLEVEL::section::midiLearn;
-    unsigned int writesize = sizeof(*putData);
-    char *point = (char*)putData;
-    unsigned int towrite = writesize;
-    unsigned int wrote = 0;
-    unsigned int found = 0;
-    unsigned int tries = 0;
-    if (jack_ringbuffer_write_space(synth->interchange.toGUI) >= writesize)
+    int tries = 0;
+    bool ok = false;
+    do
     {
-        while (towrite && tries < 3)
-        {
-            found = jack_ringbuffer_write(synth->interchange.toGUI, point, towrite);
-            wrote += found;
-            point += found;
-            towrite -= found;
-            ++tries;
-        }
-        if (towrite)
-            synth->getRuntime().Log("Unable to write data to toGui buffer", 2);
+        ok = synth->interchange.toGUI->write(putData->bytes);
+        ++tries;
+        if (!ok)
+                usleep(1);
+        // we can afford a short delay for buffer to clear
     }
-    else
+    while (!ok && tries < 3);
+    if(!ok)
         synth->getRuntime().Log("toGui buffer full!", 2);
 }
 

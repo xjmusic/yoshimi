@@ -53,8 +53,8 @@ class InterChange : private MiscFuncs, FileMgr
 
         jack_ringbuffer_t *fromCLI;
         ringBuff *decodeLoopback;
-        jack_ringbuffer_t *fromGUI;
-        jack_ringbuffer_t *toGUI;
+        ringBuff *fromGUI;
+        ringBuff *toGUI;
         ringBuff *fromMIDI;
         ringBuff *returnsBuffer;
 

@@ -67,7 +67,6 @@ void collect_data(SynthEngine *synth, float value, unsigned char type, unsigned 
     }
 
     CommandBlock putData;
-    size_t commandSize = commandBlockSize;
     putData.data.value = value;
     putData.data.control = control;
     putData.data.part = part;
@@ -123,9 +122,7 @@ void collect_data(SynthEngine *synth, float value, unsigned char type, unsigned 
     putData.data.type = type | TOPLEVEL::source::GUI;
 
 //cout << "collect_data value " << value << "  type " << int(type) << "  control " << int(control) << "  part " << int(part) << "  kit " << int(kititem) << "  engine " << int(engine) << "  insert " << int(insert)  << "  par " << int(parameter) << " par2 " << int(par2) << endl;
-    if (jack_ringbuffer_write_space(synth->interchange.fromGUI) >= commandSize)
-        jack_ringbuffer_write(synth->interchange.fromGUI, (char*) putData.bytes, commandSize);
-    else
+    if (!synth->interchange.fromGUI->write(putData.bytes))
         synth->getRuntime().Log("Unable to write to fromGUI buffer.");
 }
 
@@ -133,13 +130,9 @@ void collect_data(SynthEngine *synth, float value, unsigned char type, unsigned 
 void GuiUpdates::read_updates(SynthEngine *synth)
 {
     CommandBlock getData;
-    size_t commandSize = commandBlockSize;
     bool isChanged = false;
-    while (jack_ringbuffer_read_space(synth->interchange.toGUI) >= commandSize)
+    while (synth->interchange.toGUI->read(getData.bytes))
     {
-        int toread = commandSize;
-        char *point = (char*) &getData.bytes;
-        jack_ringbuffer_read(synth->interchange.toGUI, point, toread);
         decode_updates(synth, &getData);
         isChanged = true;
     }
