@@ -37,7 +37,7 @@ ringBuff::ringBuff(uint _bufferSize, uint _blockSize):
 
 ringBuff::~ringBuff()
 {
-    delete buffer;
+    delete [] buffer;
     buffer = NULL;
 }
 
