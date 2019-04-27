@@ -965,6 +965,9 @@ union CommandBlock{
     } data;
     char bytes [sizeof(data)];
 };
-const size_t commandBlockSize = 16;
+/*
+ * it is ESSENTIAL that this is a power of 2
+ */
+const size_t commandBlockSize = sizeof(CommandBlock);
 
 #endif

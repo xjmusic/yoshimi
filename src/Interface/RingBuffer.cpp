@@ -22,10 +22,14 @@
 
 #include <atomic>
 #include <stdlib.h>
-#include "string.h"
+#include "string.h" // needed for memcpy
 
 #include "Interface/RingBuffer.h"
 
+/*
+ * it is ESSENTIAL that all buffers and
+ * data blocks are powers of 2
+ */
 ringBuff::ringBuff(uint _bufferSize, uint _blockSize):
     bufferSize(_bufferSize),
     blockSize(_blockSize)
