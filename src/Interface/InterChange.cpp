@@ -56,7 +56,9 @@ int startInstance = 0;
 
 InterChange::InterChange(SynthEngine *_synth) :
     synth(_synth),
+#ifndef YOSHIMI_LV2_PLUGIN
     fromCLI(NULL),
+#endif
     decodeLoopback(NULL),
 #ifdef GUI_FLTK
     fromGUI(NULL),
@@ -78,8 +80,9 @@ InterChange::InterChange(SynthEngine *_synth) :
 bool InterChange::Init()
 {
     flagsValue = 0xffffffff;
-
+#ifndef YOSHIMI_LV2_PLUGIN
     fromCLI = new ringBuff(256, commandBlockSize);
+#endif
     decodeLoopback = new ringBuff(1024, commandBlockSize);
 #ifdef GUI_FLTK
     fromGUI = new ringBuff(512, commandBlockSize);
@@ -98,11 +101,13 @@ bool InterChange::Init()
 
 
 bail_out:
+#ifndef YOSHIMI_LV2_PLUGIN
     if (fromCLI)
     {
         delete(fromCLI);
         fromCLI = NULL;
     }
+#endif
     if (decodeLoopback)
     {
         delete(decodeLoopback);
@@ -207,12 +212,13 @@ InterChange::~InterChange()
 {
     if (sortResultsThreadHandle)
         pthread_join(sortResultsThreadHandle, NULL);
-
+#ifndef YOSHIMI_LV2_PLUGIN
     if (fromCLI)
     {
         delete(fromCLI);
         fromCLI = NULL;
     }
+#endif
     if (decodeLoopback)
     {
         delete(decodeLoopback);
@@ -3785,6 +3791,7 @@ void InterChange::mediate()
     do
     {
         more = false;
+#ifndef YOSHIMI_LV2_PLUGIN
         if (fromCLI->read(getData.bytes))
         {
             more = true;
@@ -3792,6 +3799,7 @@ void InterChange::mediate()
                 commandSend(&getData);
             returns(&getData);
         }
+#endif
 #ifdef GUI_FLTK
 
         if (fromGUI->read(getData.bytes))
