@@ -23,6 +23,11 @@
 #ifndef GLOBALS_H
 #define GLOBALS_H
 
+// this is still slighty experimental
+const bool handleSingleMaster = true;
+
+
+
 /*
  * For test purposes where you want guaranteed identical results, enable the
  * #define below.
@@ -259,6 +264,7 @@ namespace CONFIG // usage CONFIG::control::oscillatorSize
         enableGUI,
         enableCLI,
         enableAutoInstance,
+        enableSinglePath,
         exposeStatus,
 
         // start of engine controls

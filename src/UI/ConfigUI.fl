@@ -23,7 +23,7 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 This file is derivative of ZynAddSubFX original code.
 
-Modified April 2019
+Modified May 2019
 } {selected in_source in_header
 }
 
@@ -31,6 +31,9 @@ decl {\#include <cmath>} {public local
 }
 
 decl {\#include <FL/Fl_File_Chooser.H>} {public local
+}
+
+decl {\#include "Interface/FileMgr.h"} {public local
 }
 
 decl {\#include "Misc/Config.h"} {public local
@@ -48,7 +51,7 @@ decl {\#include "Misc/Bank.h"} {private local
 decl {\#include "MasterUI.h"} {private local
 }
 
-class ConfigUI {: {private MiscFuncs}
+class ConfigUI {: {private MiscFuncs, FileMgr}
 } {
   Function {make_window()} {} {
     Fl_Window configwindow {
@@ -303,7 +306,7 @@ or when that loads it will revert to the previous value} xywh {270 60 27 25} dow
                             send_data(CONFIG::control::enableGUI, o->value(), TOPLEVEL::type::Integer);
                         else
                             o->value(1);}
-            tooltip {Enable starting with this graphical  interface} xywh {270 200 27 25} down_box DOWN_BOX labelsize 12 align 4
+            tooltip {Enable starting with this graphical  interface} xywh {270 180 27 25} down_box DOWN_BOX labelsize 12 align 4
             code0 {o->value(synth->getRuntime().showGui);}
             code1 {if (synth->getUniqueId() != 0) o->hide(); else if (synth->getIsLV2Plugin()) o->deactivate();}
           }
@@ -311,21 +314,28 @@ or when that loads it will revert to the previous value} xywh {270 60 27 25} dow
             label {* Enable CLI}
             callback {//
                         send_data(CONFIG::control::enableCLI, o->value(), TOPLEVEL::type::Integer);}
-            tooltip {Enable starting with interactive command line interface} xywh {270 220 27 25} down_box DOWN_BOX labelsize 12 align 4
+            tooltip {Enable starting with interactive command line interface} xywh {270 200 27 25} down_box DOWN_BOX labelsize 12 align 4
             code0 {o->value(synth->getRuntime().showCLI);}
             code1 {if (synth->getUniqueId() != 0) o->hide(); else if (synth->getIsLV2Plugin()) o->deactivate();}
-          }
-          Fl_Box {} {
-            label {* Changing these settings requires a restart}
-            xywh {50 276 287 17} labelfont 1 labelsize 11 labelcolor 38 align 128
           }
           Fl_Check_Button enableAuto {
             label {Enable Auto Instance}
             callback {//
                         send_data(CONFIG::control::enableAutoInstance, o->value(), TOPLEVEL::type::Integer);}
-            tooltip {Allow main instance to start all those open when last closed.} xywh {270 240 27 25} down_box DOWN_BOX labelsize 12 align 4
+            tooltip {Allow main instance to start all those open when last closed.} xywh {270 220 27 25} down_box DOWN_BOX labelsize 12 align 4
             code0 {o->value(synth->getRuntime().autoInstance);}
             code1 {if (synth->getUniqueId() != 0) o->hide(); else if (synth->getIsLV2Plugin()) o->deactivate();}
+          }
+          Fl_Check_Button singleMaster {
+            label {* Enable Single Master}
+            callback {//
+          send_data(CONFIG::control::enableSinglePath, o->value(), TOPLEVEL::type::Integer);}
+            tooltip {Redirect new start from desktop to create new instance instead.} xywh {270 240 27 25} down_box DOWN_BOX labelsize 12 align 4 hide
+            code0 {o->value(fetchData(0, CONFIG::control::enableSinglePath, TOPLEVEL::section::config));}
+          }
+          Fl_Box {} {
+            label {* Changing these settings requires a restart}
+            xywh {50 276 287 17} labelfont 1 labelsize 11 labelcolor 38 align 128
           }
         }
         Fl_Group jackTab {
@@ -761,6 +771,11 @@ or when that loads it will revert to the previous value} xywh {270 60 27 25} dow
             type |= TOPLEVEL::type::Write;
             collect_data(synth, value, (Fl::event_button() | type), control, TOPLEVEL::section::config, UNUSED, UNUSED, UNUSED, par, par2);} {}
   }
+  Function {fetchData(float value, int control, int part, int kititem = UNUSED, int engine = UNUSED, int insert = UNUSED, int parameter = UNUSED, int par2 = UNUSED, int request = UNUSED)} {return_type float
+  } {
+    code {//
+        return collect_readData(synth, value, control, part, kititem, engine, insert, parameter, par2, request);} {}
+  }
   Function {returns_update(CommandBlock *getData)} {} {
     code {//
             int value_int = lrint(getData->data.value);
@@ -1127,7 +1142,9 @@ or when that loads it will revert to the previous value} xywh {270 60 27 25} dow
   }
   Function {Show()} {} {
     code {//
-                    configwindow->show();} {}
+                    configwindow->show();
+                    if (!synth->getIsLV2Plugin() && handleSingleMaster)
+                    	singleMaster->show();} {}
   }
   Function {Hide()} {} {
     code {//

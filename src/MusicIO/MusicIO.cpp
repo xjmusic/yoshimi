@@ -16,14 +16,13 @@
 
     You should have received a copy of the GNU General Public License
     along with yoshimi.  If not, see <http://www.gnu.org/licenses/>.
-    Modified April 2019
+
+    Modified May 2019
 */
 
 #include <errno.h>
 #include <cstring>
 #include <fftw3.h>
-
-using namespace std;
 
 #include "Misc/Config.h"
 #include "Misc/SynthEngine.h"
