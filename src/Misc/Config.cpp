@@ -240,7 +240,8 @@ bool Config::Setup(int argc, char **argv)
     }
     if (!midiDevice.size())
         midiDevice = "";
-    loadCmdArgs(argc, argv);
+    if (argv != NULL) // only the main synth rerads these
+        loadCmdArgs(argc, argv);
     Oscilsize = nearestPowerOf2(Oscilsize, MIN_OSCIL_SIZE, MAX_OSCIL_SIZE);
     Buffersize = nearestPowerOf2(Buffersize, MIN_BUFFER_SIZE, MAX_BUFFER_SIZE);
     //Log(asString(Oscilsize));

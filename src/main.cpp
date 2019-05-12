@@ -208,7 +208,10 @@ static void *mainGuiThread(void *arg)
     GuiThreadMsg::sendMessage(firstSynth, GuiThreadMsg::NewSynthEngine, 0);
 #endif
     if (firstRuntime->autoInstance)
-        newBlock();
+    {
+        thread blockStart(newBlock);
+        blockStart.detach();
+    }
     while (firstRuntime->runSynth)
     {
         firstRuntime->signalCheck();
@@ -284,9 +287,11 @@ static void *mainGuiThread(void *arg)
         {
             int testInstance = startInstance &= 0x7f;
             configuring = true;
-            mainCreateNewInstance(testInstance, true);
-            configuring = false;
-            startInstance = testInstance; // to prevent repeats!
+            thread newInstance(mainCreateNewInstance, testInstance, true);
+            newInstance.detach();
+            //mainCreateNewInstance(testInstance, true);
+            //configuring = false;
+            //startInstance = testInstance; // to prevent repeats!
         }
         else
         {
@@ -318,9 +323,17 @@ static void *mainGuiThread(void *arg)
 
 int mainCreateNewInstance(unsigned int forceId, bool loadState)
 {
+    static bool start = true;
     MusicClient *musicClient = NULL;
     unsigned int instanceID;
-    SynthEngine *synth = new SynthEngine(globalArgc, globalArgv, false, forceId);
+    SynthEngine *synth;
+    if (start)
+    {
+        synth = new SynthEngine(globalArgc, globalArgv, false, forceId);
+        start = false;
+    }
+    else // only the first instance reads arguments
+        synth = new SynthEngine(0, NULL, false, forceId);
     if (!synth->getRuntime().isRuntimeSetupCompleted())
         goto bail_out;
     instanceID = synth->getUniqueId();
@@ -391,6 +404,8 @@ int mainCreateNewInstance(unsigned int forceId, bool loadState)
             mainRegisterAudioPort(synth, npart);
     }
     synth->getRuntime().activeInstance |= (1 << instanceID);
+    configuring = false;
+    startInstance = instanceID;
     return instanceID;
 
 bail_out:
