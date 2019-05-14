@@ -56,7 +56,7 @@
 
 extern map<SynthEngine *, MusicClient *> synthInstances;
 extern SynthEngine *firstSynth;
-extern int startInstance;
+extern int newInstanceNum;
 extern std::string singlePath;
 extern std::string runGui;
 
@@ -69,7 +69,8 @@ bool isSingleMaster = false;
 bool bShowGui = true;
 bool bShowCmdLine = true;
 bool splashSet = true;
-bool configuring = false;
+bool configBase = false;
+bool *configuring = &configBase;
 #ifdef GUI_FLTK
 time_t old_father_time, here_and_now;
 #endif
@@ -85,12 +86,12 @@ void newBlock()
     {
         if ((firstRuntime->activeInstance >> i) & 1)
         {
-            while(configuring)
+            while(*configuring)
                 usleep(1000);
             // in case there is still an instance starting from elsewhere
-            configuring = true;
+            *configuring = true;
             mainCreateNewInstance(i, true);
-            configuring = false;
+            *configuring = false;
         }
     }
 }
@@ -98,11 +99,11 @@ void newBlock()
 
 void newInstance()
 {
-    while (configuring)
+    while (*configuring)
         usleep(1000);
     // in case there is still an instance starting from elsewhere
-    configuring = true;
-    startInstance = 0x81;
+    *configuring = true;
+    newInstanceNum = 0x81;
 }
 
 
@@ -283,15 +284,13 @@ static void *mainGuiThread(void *arg)
         }
 
         // where all the action is ...
-        if (startInstance > 0x80)
+        if (newInstanceNum > 0x80)
         {
-            int testInstance = startInstance &= 0x7f;
-            configuring = true;
+            int testInstance = newInstanceNum &= 0x7f;
+            *configuring = true;
             thread newInstance(mainCreateNewInstance, testInstance, true);
             newInstance.detach();
-            //mainCreateNewInstance(testInstance, true);
-            //configuring = false;
-            //startInstance = testInstance; // to prevent repeats!
+
         }
         else
         {
@@ -404,8 +403,8 @@ int mainCreateNewInstance(unsigned int forceId, bool loadState)
             mainRegisterAudioPort(synth, npart);
     }
     synth->getRuntime().activeInstance |= (1 << instanceID);
-    configuring = false;
-    startInstance = instanceID;
+    *configuring = false;
+    newInstanceNum = instanceID;
     return instanceID;
 
 bail_out:

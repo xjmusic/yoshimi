@@ -51,7 +51,7 @@ extern SynthEngine *firstSynth;
 
 std::string singlePath;
 std::string runGui;
-int startInstance = 0;
+int newInstanceNum = 0;
 
 InterChange::InterChange(SynthEngine *_synth) :
     synth(_synth),
@@ -656,13 +656,13 @@ void InterChange::indirectTransfers(CommandBlock *getData)
                     if (synth == firstSynth)
                     {
                         if (value > 0 && value < 32)
-                            startInstance = value | 0x80;
+                            newInstanceNum = value | 0x80;
                         else
-                            startInstance = 0x81; // next available
-                        while (startInstance > 0x80)
+                            newInstanceNum = 0x81; // next available
+                        while (newInstanceNum > 0x80)
                             usleep(1000);
-                        value = startInstance; // actual instance found
-                        startInstance = 0; // just to be sure
+                        value = newInstanceNum; // actual instance found
+                        newInstanceNum = 0; // just to be sure
                     }
                     break;
                 case MAIN::control::stopInstance:
