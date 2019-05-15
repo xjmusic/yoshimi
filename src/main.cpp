@@ -69,8 +69,10 @@ bool isSingleMaster = false;
 bool bShowGui = true;
 bool bShowCmdLine = true;
 bool splashSet = true;
-bool configBase = false;
-bool *configuring = &configBase;
+int threadSafe = 0;
+int *threadUnsafe = &threadSafe;
+SynthEngine *newSynth;
+MusicClient *newClient;
 #ifdef GUI_FLTK
 time_t old_father_time, here_and_now;
 #endif
@@ -79,31 +81,44 @@ time_t old_father_time, here_and_now;
 //It's only suitable for single instance app support
 static struct sigaction yoshimiSigAction;
 
-
-void newBlock()
+// short lifetime threads
+void newBlock(void)
 {
+    int configuring = false;
     for (int i = 1; i < 32; ++i)
     {
         if ((firstRuntime->activeInstance >> i) & 1)
         {
-            while(*configuring)
+            while (configuring)
                 usleep(1000);
-            // in case there is still an instance starting from elsewhere
-            *configuring = true;
+            // in case there is still an instance starting
+            configuring = true;
             mainCreateNewInstance(i, true);
-            *configuring = false;
+            configuring = false;
         }
     }
 }
 
 
-void newInstance()
+void newInstance(int number)
 {
-    while (*configuring)
-        usleep(1000);
-    // in case there is still an instance starting from elsewhere
-    *configuring = true;
-    newInstanceNum = 0x81;
+    mainCreateNewInstance(number, true);
+}
+
+
+void finaliseInstance(void)
+{
+    //register jack ports for enabled parts
+    for (int npart = 0; npart < NUM_MIDI_PARTS; ++npart)
+    {
+        if (newSynth->partonoffRead(npart))
+            mainRegisterAudioPort(newSynth, npart);
+    }
+    unsigned int instanceID = newSynth->getUniqueId();
+    newInstanceNum = instanceID;
+    synthInstances.insert(std::make_pair(newSynth, newClient));
+    firstRuntime->activeInstance |= (1 << instanceID);
+    *threadUnsafe = 0;
 }
 
 
@@ -124,7 +139,14 @@ void yoshimiSigHandler(int sig)
             break;
         case SIGUSR2: // start next instance
             if(isSingleMaster)
-                newInstance();
+            {
+                if (*threadUnsafe == 0)
+                {
+                    *threadUnsafe = 1;
+                    thread setNewInstance(newInstance, 1); // next available
+                    setNewInstance.detach();
+                }
+            }
             sigaction(SIGUSR2, &yoshimiSigAction, NULL);
             break;
         default:
@@ -210,6 +232,7 @@ static void *mainGuiThread(void *arg)
 #endif
     if (firstRuntime->autoInstance)
     {
+        *threadUnsafe = 1;
         thread blockStart(newBlock);
         blockStart.detach();
     }
@@ -257,8 +280,8 @@ static void *mainGuiThread(void *arg)
                 if (_synth)
                 {
                     int instancebit = (1 << instanceID);
-                    if (_synth->getRuntime().activeInstance & instancebit)
-                        _synth->getRuntime().activeInstance -= instancebit;
+                    if (firstRuntime->activeInstance & instancebit)
+                        firstRuntime->activeInstance -= instancebit;
                     _synth->saveBanks();
                     _synth->getRuntime().flushLog();
                     delete _synth;
@@ -287,9 +310,12 @@ static void *mainGuiThread(void *arg)
         if (newInstanceNum > 0x80)
         {
             int testInstance = newInstanceNum &= 0x7f;
-            *configuring = true;
-            thread newInstance(mainCreateNewInstance, testInstance, true);
-            newInstance.detach();
+            if (*threadUnsafe == 0)
+            {
+                *threadUnsafe = 1;
+                thread makeNewInstance(mainCreateNewInstance, testInstance, true);
+                makeNewInstance.detach();
+            }
 
         }
         else
@@ -303,6 +329,12 @@ static void *mainGuiThread(void *arg)
             else
 #endif
                 usleep(33333);
+        }
+        if (*threadUnsafe == 3)
+        {
+            *threadUnsafe = 5;
+            thread setInstance(finaliseInstance);
+            setInstance.detach();
         }
     }
 
@@ -387,25 +419,27 @@ int mainCreateNewInstance(unsigned int forceId, bool loadState)
     synth->Unmute();
 
     if (instanceID == 0)
-        std::cout << "\nYay! We're up and running :-)\n";
-    else
     {
-        std::cout << "\nStarted "<< instanceID << "\n";
-        // following copied here for other instances
-        synth->installBanks();
+        std::cout << "\nYay! We're up and running :-)\n";
+        synthInstances.insert(std::make_pair(synth, musicClient));
+    //register jack ports for enabled parts
+        for (int npart = 0; npart < NUM_MIDI_PARTS; ++npart)
+        {
+            if (synth->partonoffRead(npart))
+                mainRegisterAudioPort(synth, npart);
+        }
+        firstRuntime->activeInstance |= (1 << instanceID);
+        newInstanceNum = instanceID;
+        return instanceID;
     }
 
-    synthInstances.insert(std::make_pair(synth, musicClient));
-    //register jack ports for enabled parts
-    for (int npart = 0; npart < NUM_MIDI_PARTS; ++npart)
-    {
-        if (synth->partonoffRead(npart))
-            mainRegisterAudioPort(synth, npart);
-    }
-    synth->getRuntime().activeInstance |= (1 << instanceID);
-    *configuring = false;
-    newInstanceNum = instanceID;
-    return instanceID;
+    std::cout << "\nStarted "<< instanceID << "\n";
+    // following copied here for other instances
+    synth->installBanks();
+    newSynth = synth;
+    newClient = musicClient;
+    *threadUnsafe = 3;
+    return 0;
 
 bail_out:
     synth->getRuntime().runSynth = false;
