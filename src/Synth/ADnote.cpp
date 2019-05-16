@@ -218,10 +218,8 @@ void ADnote::construct()
                 break;
 
             case 2:  // unison for 2 subvoices
-                {
-                    unison_base_freq_rap[nvoice][0] = 1.0f / unison_real_spread;
-                    unison_base_freq_rap[nvoice][1] = unison_real_spread;
-                }
+                unison_base_freq_rap[nvoice][0] = 1.0f / unison_real_spread;
+                unison_base_freq_rap[nvoice][1] = unison_real_spread;
                 break;
 
             default: // unison for more than 2 subvoices
@@ -248,6 +246,7 @@ void ADnote::construct()
                             powf(2.0f, (unison_spread * unison_values[k]) / 1200.0f);
                     }
                 }
+                break;
         }
         if (is_pwm)
             for (int i = true_unison - 1; i >= 0; i--)
@@ -471,6 +470,7 @@ void ADnote::construct()
                 default:
                     NoteVoicePar[nvoice].FMEnabled = NONE;
                     freqbasedmod[nvoice] = false;
+                    break;
             }
 
         NoteVoicePar[nvoice].FMDetuneFromBaseOsc =
@@ -506,6 +506,7 @@ void ADnote::construct()
                     fmvoldamp = 1.0f;
                 NoteVoicePar[nvoice].FMVolume =
                     adpars->VoicePar[nvoice].PFMVolume / 127.0f * fmvoldamp;
+                break;
         }
 
         // Voice's modulator velocity sensing
@@ -794,6 +795,7 @@ void ADnote::ADlegatonote(float freq_, float velocity_, int portamento_,
                     fmvoldamp = 1.0f;
                 NoteVoicePar[nvoice].FMVolume =
                     adpars->VoicePar[nvoice].PFMVolume / 127.0f * fmvoldamp;
+                break;
         }
 
         // Voice's modulator velocity sensing
