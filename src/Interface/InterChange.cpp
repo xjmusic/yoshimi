@@ -748,6 +748,15 @@ void InterChange::indirectTransfers(CommandBlock *getData)
         {
             switch (control)
             {
+                case BANK::control::deleteInstrument:
+                {
+                    int tmp = synth->bank.clearslot(value);
+                    text = miscMsgPop(tmp & NO_MSG);
+                    if (tmp > NO_MSG)
+                        text = " FAILED " + text;
+                    value = miscMsgPush(text);
+                    break;
+                }
                 case BANK::control::selectFirstInstrumentToSwap:
                 {
                     if(kititem == UNUSED)
@@ -1917,6 +1926,9 @@ std::string InterChange::resolveBank(CommandBlock *getData)
     showValue = false;
     switch(control)
     {
+        case BANK::control::deleteInstrument:
+            contstr = "Instrument delete" + name;
+            break;
         case BANK::control::selectFirstInstrumentToSwap:
             contstr = "Set Instrument ID " + std::to_string(insert + 1) + "  Bank ID " + std::to_string(kititem) + "  Root ID " + std::to_string(engine) + " for swap";
             break;
@@ -3937,6 +3949,7 @@ void InterChange::mutedDecode(unsigned int altData)
             putData.data.type = TOPLEVEL::type::Write || TOPLEVEL::type::Integer;
             break;
         case TOPLEVEL::muted::masterReset:
+            miscMsgClear(); // make sure there are no hanging messages
             putData.data.control = (altData >> 8) & 0xff;
             putData.data.type = altData >> 24;
             break;

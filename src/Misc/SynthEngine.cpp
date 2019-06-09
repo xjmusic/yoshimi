@@ -863,6 +863,9 @@ int SynthEngine::setProgramByName(CommandBlock *getData)
     bool ok = true;
     int npart = int(getData->data.kit);
     string fname = miscMsgPop(getData->data.par2);
+    fname = setExtension(fname, EXTEN::yoshInst);
+    if (!isRegFile(fname.c_str()))
+        fname = setExtension(fname, EXTEN::zynInst);
     string name = findleafname(fname);
     if (name < "!")
     {
@@ -2298,7 +2301,6 @@ void SynthEngine::ShutUp(void)
         insefx[nefx]->cleanup();
     for (int nefx = 0; nefx < NUM_SYS_EFX; ++nefx)
         sysefx[nefx]->cleanup();
-    miscMsgClear();
 }
 
 

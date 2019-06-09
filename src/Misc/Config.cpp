@@ -880,9 +880,9 @@ void Config::StartupReport(string clientName)
     Log(report, 2);
     if (fullInfo)
     {
+        Log("Buffsize: " + asString(synth->buffersize), 2);
         Log("Oscilsize: " + asString(synth->oscilsize), 2);
         Log("Samplerate: " + asString(synth->samplerate), 2);
-        Log("Period size: " + asString(synth->buffersize), 2);
     }
 }
 //#endif

@@ -5370,6 +5370,14 @@ int CmdInterface::cmdIfaceProcessCommand(char *cCmd)
                 return done_msg;
             }
         }
+        if (matchnMove(2, point, "instrument") || matchnMove(2, point, "program"))
+        {
+            tmp = string2int(point);
+            if (tmp <= 0 || tmp >= MAX_INSTRUMENTS_IN_BANK)
+                    return range_msg;
+            sendDirect(TOPLEVEL::action::lowPrio, tmp - 1, TOPLEVEL::type::Write, BANK::control::deleteInstrument, TOPLEVEL::section::bank);
+            return done_msg;
+        }
         replyString = "remove";
         return what_msg;
     }
