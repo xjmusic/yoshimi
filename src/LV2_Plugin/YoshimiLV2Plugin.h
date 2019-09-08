@@ -40,6 +40,7 @@
 
 #include "Misc/SynthEngine.h"
 #include "Interface/InterChange.h"
+#include "Interface/Data2Text.h"
 #include "Interface/RingBuffer.h"
 #include "MusicIO/MusicIO.h"
 
@@ -97,9 +98,9 @@ public:
    bool openAudio() { return true; }
    bool openMidi() { return true; }
 
-   virtual string audioClientName(void) { return "LV2 plugin"; }
+   virtual std::string audioClientName(void) { return "LV2 plugin"; }
    virtual int audioClientId(void) { return 0; }
-   virtual string midiClientName(void) { return "LV2 plugin"; }
+   virtual std::string midiClientName(void) { return "LV2 plugin"; }
    virtual int midiClientId(void) { return 0; }
 
    virtual void registerAudioPort(int) {}

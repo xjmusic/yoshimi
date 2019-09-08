@@ -21,12 +21,14 @@
     Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
     This file is derivative of ZynAddSubFX original code.
-    Modified March 2019
 */
 #include <cstring>
+#include <iostream>
 
 #include "Misc/SynthEngine.h"
 #include "Params/Presets.h"
+
+extern SynthEngine *firstSynth;
 
 Presets::Presets(SynthEngine *_synth) : nelement(-1), synth(_synth)
 {
@@ -68,7 +70,7 @@ void Presets::copy(const char *name)
     if (name == NULL)
         synth->getPresetsStore().copyclipboard(xml, type);
     else
-        synth->getPresetsStore().copypreset(xml, type,name);
+        firstSynth->getPresetsStore().copypreset(xml, type,name);
 
     delete(xml);
     nelement = -1;
@@ -97,14 +99,14 @@ void Presets::paste(int npreset)
             delete(xml);
             return;
         }
-        if (!synth->getPresetsStore().pasteclipboard(xml))
+        if (!firstSynth->getPresetsStore().pasteclipboard(xml))
         {
             delete(xml);
             nelement = -1;
             return;
         }
     } else {
-        if (!synth->getPresetsStore().pastepreset(xml, npreset))
+        if (!firstSynth->getPresetsStore().pastepreset(xml, npreset))
         {
             delete(xml);
             nelement = -1;
@@ -112,18 +114,32 @@ void Presets::paste(int npreset)
         }
     }
 
+    string altType = "";
+    if (string(type) == "Padsyth")
+        altType = "ADnoteParameters";
+    else if (string(type) == "Padsythn")
+        altType = "ADnoteParametersn";
+    else if (string(type) == "Psubsyth")
+        altType = "SUBnoteParameters";
+    else if (string(type) == "Ppadsyth")
+        altType = "PADnoteParameters";
+
     if (xml->enterbranch(type) == 0)
+        if (altType.empty() || xml->enterbranch(altType) == 0)
     {
         nelement = -1;
         delete(xml);
         return;
     }
+
     synth->Mute();
     if (nelement == -1)
     {
         defaults();
         getfromXML(xml);
-    } else {
+    }
+    else
+    {
         defaults(nelement);
         getfromXMLsection(xml, nelement);
     }
@@ -152,17 +168,17 @@ void Presets::setelement(int n)
 }
 
 
-void Presets::rescanforpresets(void)
+void Presets::rescanforpresets(int root)
 {
     char type[MAX_PRESETTYPE_SIZE];
     strcpy(type, this->type);
     if (nelement != -1)
         strcat(type, "n");
-    synth->getPresetsStore().rescanforpresets(type);
+    firstSynth->getPresetsStore().rescanforpresets(type, root);
 }
 
 
 void Presets::deletepreset(int npreset)
 {
-    synth->getPresetsStore().deletepreset(npreset);
+    firstSynth->getPresetsStore().deletepreset(npreset);
 }

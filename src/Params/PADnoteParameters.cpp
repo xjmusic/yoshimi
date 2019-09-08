@@ -22,13 +22,8 @@
 
     This file is a derivative of a ZynAddSubFX original.
 
-    Modified March 2019
+    Modified May 2019
 */
-
-#include <cmath>
-#include <iostream>
-
-using namespace std;
 
 #include "Misc/XMLwrapper.h"
 #include "DSP/FFTwrapper.h"
@@ -38,12 +33,16 @@ using namespace std;
 #include "Params/LFOParams.h"
 #include "Params/FilterParams.h"
 #include "Misc/SynthEngine.h"
+#include "Misc/FileMgrFuncs.h"
 #include "Params/PADnoteParameters.h"
 #include "Misc/WavFile.h"
 
+using file::saveData;
+
+
 PADnoteParameters::PADnoteParameters(FFTwrapper *fft_, SynthEngine *_synth) : Presets(_synth)
 {
-    setpresettype("PADnoteParameters");
+    setpresettype("Ppadsyth");
     fft = fft_;
 
     resonance = new Resonance(synth);
@@ -297,7 +296,6 @@ float PADnoteParameters::getprofile(float *smp, int size)
     float max = 0.0f;
     for (int i = 0; i < size; ++i)
     {
-        smp[i] = smp[i];
         if (smp[i] > max)
             max = smp[i];
     }
@@ -975,12 +973,11 @@ void PADnoteParameters::getfromXML(XMLwrapper *xml)
 
 float PADnoteParameters::getLimits(CommandBlock *getData)
 {
-    float value = getData->data.value;
-    unsigned char type = getData->data.type;
-    int request = type & TOPLEVEL::type::Default;
+    float value = getData->data.value.F;
+    int request = int(getData->data.type & TOPLEVEL::type::Default);
     int control = getData->data.control;
 
-    type &= (TOPLEVEL::source::MIDI || TOPLEVEL::source::CLI || TOPLEVEL::source::GUI); // source bits only
+    unsigned char type = 0;
 
     // padnote defaults
     int min = 0;

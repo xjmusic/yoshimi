@@ -26,8 +26,7 @@
 #include <jack/ringbuffer.h>
 
 #include "globals.h"
-#include "Misc/MiscFuncs.h"
-#include "Interface/FileMgr.h"
+#include "Interface/Data2Text.h"
 #include "Interface/RingBuffer.h"
 #include "Params/LFOParams.h"
 #include "Params/FilterParams.h"
@@ -36,9 +35,17 @@
 #include "Synth/Resonance.h"
 
 class SynthEngine;
+class DataText;
 
-class InterChange : private MiscFuncs, FileMgr
+// used by main.cpp and SynthEngine.cpp
+extern std::string singlePath;
+extern std::string runGui;
+extern int startInstance;
+
+
+class InterChange : private DataText
 {
+
     private:
         SynthEngine *synth;
 
@@ -58,6 +65,7 @@ class InterChange : private MiscFuncs, FileMgr
         ringBuff *returnsBuffer;
 
         void mediate(void);
+        void historyActionCheck(CommandBlock *getData);
         void mutedDecode(unsigned int altData);
         void returns(CommandBlock *getData);
         void setpadparams(int npart, int kititem);
@@ -65,6 +73,7 @@ class InterChange : private MiscFuncs, FileMgr
         bool commandSend(CommandBlock *getData);
         float readAllData(CommandBlock *getData);
         void resolveReplies(CommandBlock *getData);
+        std::string resolveText(CommandBlock *getData, bool addValue);
         void testLimits(CommandBlock *getData);
         float returnLimits(CommandBlock *getData);
         unsigned char blockRead;
@@ -79,25 +88,9 @@ class InterChange : private MiscFuncs, FileMgr
         void *sortResultsThread(void);
         static void *_sortResultsThread(void *arg);
         pthread_t  sortResultsThreadHandle;
-        void indirectTransfers(CommandBlock *getData);
+        void indirectTransfers(CommandBlock *getData, bool noForward = false);
         std::string formatScales(std::string text);
-        std::string resolveVector(CommandBlock *getData);
-        std::string resolveMicrotonal(CommandBlock *getData);
-        std::string resolveConfig(CommandBlock *getData);
-        std::string resolveBank(CommandBlock *getData);
-        std::string resolveMain(CommandBlock *getData);
-        std::string resolvePart(CommandBlock *getData);
-        std::string resolveAdd(CommandBlock *getData);
-        std::string resolveAddVoice(CommandBlock *getData);
-        std::string resolveSub(CommandBlock *getData);
-        std::string resolvePad(CommandBlock *getData);
-        std::string resolveOscillator(CommandBlock *getData);
-        std::string resolveResonance(CommandBlock *getData);
-        std::string resolveLFO(CommandBlock *getData);
-        std::string resolveFilter(CommandBlock *getData);
-        std::string resolveEnvelope(CommandBlock *getData);
-        std::string resolveEffects(CommandBlock *getData);
-        bool showValue;
+
         unsigned int lockTime;
 
         unsigned int swapRoot1;
@@ -110,6 +103,7 @@ class InterChange : private MiscFuncs, FileMgr
         void commandMicrotonal(CommandBlock *getData);
         void commandConfig(CommandBlock *getData);
         void commandMain(CommandBlock *getData);
+        void commandBank(CommandBlock *getData);
         void commandPart(CommandBlock *getData);
         void commandAdd(CommandBlock *getData);
         void commandAddVoice(CommandBlock *getData);

@@ -25,16 +25,12 @@
 #include "Misc/ConfBuild.h"
 #include "Misc/SynthEngine.h"
 #include "Interface/InterChange.h"
+#include "Interface/Data2Text.h"
 #include "Interface/MidiDecode.h"
 #include "MusicIO/MusicClient.h"
 #ifdef GUI_FLTK
     #include "MasterUI.h"
 #endif
-#include <math.h>
-#include <stdio.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
 
 #define YOSHIMI_STATE_URI "http://yoshimi.sourceforge.net/lv2_plugin#state"
@@ -44,6 +40,7 @@
 
 #define YOSHIMI_LV2_BUF_SIZE__maxBlockLength      YOSHIMI_LV2_BUF_SIZE_PREFIX "maxBlockLength"
 #define YOSHIMI_LV2_BUF_SIZE__minBlockLength      YOSHIMI_LV2_BUF_SIZE_PREFIX "minBlockLength"
+#define YOSHIMI_LV2_BUF_SIZE__nominalBlockLength      YOSHIMI_LV2_BUF_SIZE_PREFIX "nominalBlockLength"
 
 #define YOSHIMI_LV2_OPTIONS_URI    "http://lv2plug.in/ns/ext/options"
 #define YOSHIMI_LV2_OPTIONS_PREFIX YOSHIMI_LV2_OPTIONS_URI "#"
@@ -54,7 +51,7 @@
 #define YOSHIMI_LV2_STATE__StateChanged      "http://lv2plug.in/ns/ext/state#StateChanged"
 
 extern SynthEngine *firstSynth;
-extern int startInstance;
+
 
 typedef enum {
     LV2_OPTIONS_INSTANCE,
@@ -110,20 +107,18 @@ void YoshimiLV2Plugin::process(uint32_t sample_count)
     {
         return;
     }
-    //synth->sent_all_buffersize_f = min(sample_count, (uint32_t)synth->buffersize);
+
     /*
-     * The line above seems to cause problems with envelopes
-     * in Carla.
-     * It has been commented out and investigation is ongoing
-     * to ensure it's removal doesn't cause other problems.
+     * Our implimentation of LV2 has a problem with envelopes. In general
+     * the bigger the buffer size the shorter the envelope, and whichever
+     * is the smallest (host size or Yoshimi size) determines the time.
+     *
+     * However, Yoshimi is always correct when working standalone.
      */
 
-    //int real_sample_count = sample_count;
-    int real_sample_count = min(sample_count, _bufferSize);
-    // not sure which of the above two is the best :(
     int offs = 0;
-    int next_frame = 0;
-    int processed = 0;
+    uint32_t next_frame = 0;
+    uint32_t processed = 0;
     float *tmpLeft [NUM_MIDI_PARTS + 1];
     float *tmpRight [NUM_MIDI_PARTS + 1];
     struct midi_event intMidiEvent;
@@ -146,18 +141,18 @@ void YoshimiLV2Plugin::process(uint32_t sample_count)
         if (event->body.type == _midi_event_id)
         {
             next_frame = event->time.frames;
-            if (next_frame >= real_sample_count)
+            if (next_frame >= sample_count)
                 continue;
             /*if (next_frame == _bufferSize - 1
                && processed == 0)
             {
                 next_frame = 0;
             }*/
-            int to_process = next_frame - offs;
+            uint32_t to_process = next_frame - offs;
 
             if ((to_process > 0)
-               && (processed < real_sample_count)
-               && (to_process <= (real_sample_count - processed)))
+               && (processed < sample_count)
+               && (to_process <= (sample_count - processed)))
             {
                 int mastered = 0;
                 offs = next_frame;
@@ -181,9 +176,9 @@ void YoshimiLV2Plugin::process(uint32_t sample_count)
         }
     }
 
-    if (processed < real_sample_count)
+    if (processed < sample_count)
     {
-        uint32_t to_process = real_sample_count - processed;
+        uint32_t to_process = sample_count - processed;
         int mastered = 0;
         offs = next_frame;
         while (to_process - mastered > 0)
@@ -293,6 +288,7 @@ YoshimiLV2Plugin::YoshimiLV2Plugin(SynthEngine *synth, double sampleRate, const 
         ++features;
     }
 
+    uint32_t nomBufSize = 0;
     if (_uridMap.map != NULL && options != NULL)
     {
         _midi_event_id = _uridMap.map(_uridMap.handle, LV2_MIDI__MidiEvent);
@@ -300,6 +296,7 @@ YoshimiLV2Plugin::YoshimiLV2Plugin(SynthEngine *synth, double sampleRate, const 
         _atom_string_id = _uridMap.map(_uridMap.handle, LV2_ATOM__String);
         LV2_URID maxBufSz = _uridMap.map(_uridMap.handle, YOSHIMI_LV2_BUF_SIZE__maxBlockLength);
         LV2_URID minBufSz = _uridMap.map(_uridMap.handle, YOSHIMI_LV2_BUF_SIZE__minBlockLength);
+        LV2_URID nomBufSz = _uridMap.map(_uridMap.handle, YOSHIMI_LV2_BUF_SIZE__nominalBlockLength);
         LV2_URID atomInt = _uridMap.map(_uridMap.handle, LV2_ATOM__Int);
         _atom_type_chunk = _uridMap.map(_uridMap.handle, LV2_ATOM__Chunk);
         _atom_type_sequence = _uridMap.map(_uridMap.handle, LV2_ATOM__Sequence);
@@ -316,12 +313,17 @@ YoshimiLV2Plugin::YoshimiLV2Plugin(SynthEngine *synth, double sampleRate, const 
                     if (_bufferSize < bufSz)
                         _bufferSize = bufSz;
                 }
+                if (options->key == nomBufSz && options->type == atomInt)
+                    nomBufSize = *static_cast<const uint32_t *>(options->value);
             }
             ++options;
         }
     }
 
-    if (_bufferSize == 0)
+    //_synth->getRuntime().Log("Buffer size " + to_string(nomBufSize));;
+    if (nomBufSize > 0)
+        _bufferSize = nomBufSize;
+    else if (_bufferSize == 0)
         _bufferSize = MAX_BUFFER_SIZE;
 }
 
@@ -381,8 +383,17 @@ bool YoshimiLV2Plugin::init()
 LV2_Handle	YoshimiLV2Plugin::instantiate (const struct _LV2_Descriptor *desc, double sample_rate, const char *bundle_path, const LV2_Feature *const *features)
 {
     SynthEngine *synth = new SynthEngine(0, NULL, true);
-    if (synth == NULL)
+    if (synth == NULL || !synth->getRuntime().isRuntimeSetupCompleted()){
         return NULL;
+    }
+    /*
+     * Perform further global initialisation.
+     * For stand-alone the equivalent init happens in main(),
+     * after mainCreateNewInstance() returned successfully.
+     */
+    synth->installBanks();
+    synth->loadHistory();
+
     YoshimiLV2Plugin *inst = new YoshimiLV2Plugin(synth, sample_rate, bundle_path, features, desc);
     if (inst->init())
         return static_cast<LV2_Handle>(inst);

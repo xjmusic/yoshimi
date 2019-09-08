@@ -22,7 +22,6 @@
 
     This file is derivative of ZynAddSubFX original code.
 
-    Modified April 2019
 */
 
 #ifndef XML_WRAPPER_H
@@ -31,16 +30,12 @@
 #include <mxml.h>
 #include <string>
 
-
-#include "Misc/MiscFuncs.h"
-#include "Interface/FileMgr.h"
-
 // max tree depth
 #define STACKSIZE 128
 
 class SynthEngine;
 
-class XMLwrapper : private MiscFuncs, FileMgr
+class XMLwrapper
 {
     public:
         XMLwrapper(SynthEngine *_synth, bool _isYoshi = false, bool includeBase = true);
@@ -73,6 +68,10 @@ class XMLwrapper : private MiscFuncs, FileMgr
 
         // this must be called after each branch (nodes that contains child nodes)
         void endbranch(void);
+
+        // we always save with a blank first line
+        const char *removeBlanks(const char *c)
+        {while(isspace(*c)) ++c; return c;}
 
         // LOAD from XML
         bool loadXMLfile(const std::string& filename); // true if loaded ok
@@ -121,6 +120,7 @@ class XMLwrapper : private MiscFuncs, FileMgr
         bool minimal; // false if all parameters will be stored
 
         struct {
+            int type;
             unsigned char ADDsynth_used;
             unsigned char SUBsynth_used;
             unsigned char PADsynth_used;
@@ -128,8 +128,8 @@ class XMLwrapper : private MiscFuncs, FileMgr
         } information;
 
         // opens a file and parse only the "information" data on it
-        // returns "true" if all went ok or "false" on errors
-        void checkfileinformation(const std::string& filename);
+
+        void checkfileinformation(const std::string& filename, unsigned int& names, int& type);
         void slowinfosearch(char *idx);
 
     private:
@@ -158,6 +158,8 @@ class XMLwrapper : private MiscFuncs, FileMgr
         // this is used to store the parents
         mxml_node_t *parentstack[STACKSIZE];
         int stackpos;
+        int xml_k;
+        char tabs[STACKSIZE + 2];
 
         void push(mxml_node_t *node);
         mxml_node_t *pop(void);

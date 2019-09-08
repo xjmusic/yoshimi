@@ -17,14 +17,12 @@
     yoshimi; if not, write to the Free Software Foundation, Inc., 51 Franklin
     Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-    Modified April 2019
 */
 
 #include "Misc/SynthEngine.h"
+#include "Misc/TextMsgBuffer.h"
 #include "MiscGui.h"
 #include "MasterUI.h"
-
-#include <iostream>
 
 #include <FL/Fl.H>
 #include <FL/fl_draw.H>
@@ -32,38 +30,51 @@
 #include <cairo.h>
 #include <cairo-xlib.h>
 
-SynthEngine *synth;
 
-float collect_readData(SynthEngine *synth, float value, unsigned char control, unsigned char part, unsigned char kititem, unsigned char engine, unsigned char insert, unsigned char parameter, unsigned char par2, unsigned char request)
+namespace { // Implementation details...
+
+    TextMsgBuffer& textMsgBuffer = TextMsgBuffer::instance();
+}
+
+
+float collect_readData(SynthEngine *synth, float value, unsigned char control, unsigned char part, unsigned char kititem, unsigned char engine, unsigned char insert, unsigned char parameter, unsigned char offset, unsigned char miscmsg, unsigned char request)
 {
-    unsigned char type;
+    unsigned char type = 0;
+    unsigned char action = TOPLEVEL::action::fromGUI;
     if (request < TOPLEVEL::type::Limits)
         type = request | TOPLEVEL::type::Limits; // its a limit test
-    else
-        type = 0;
+    else if (request != UNUSED)
+        action |= request;
     CommandBlock putData;
 
-    putData.data.value = value;
-    putData.data.type = type | TOPLEVEL::source::GUI;
+    putData.data.value.F = value;
+    putData.data.type = type;
+    putData.data.source = action;
     putData.data.control = control;
     putData.data.part = part;
     putData.data.kit = kititem;
     putData.data.engine = engine;
     putData.data.insert = insert;
     putData.data.parameter = parameter;
-    putData.data.par2 = par2;
-    Fl::lock();
-    float result = synth->interchange.readAllData(&putData);
-    Fl::unlock();
+    putData.data.offset = offset;
+    putData.data.miscmsg = miscmsg;
+    float result;
+    if (miscmsg != NO_MSG)
+    {
+        synth->interchange.readAllData(&putData);
+        result = putData.data.miscmsg;
+    }
+    else
+        result = synth->interchange.readAllData(&putData);
     return result;
 
 }
 
-void collect_data(SynthEngine *synth, float value, unsigned char type, unsigned char control, unsigned char part, unsigned char kititem, unsigned char engine, unsigned char insert, unsigned char parameter, unsigned char par2)
+void collect_data(SynthEngine *synth, float value, unsigned char action, unsigned char type, unsigned char control, unsigned char part, unsigned char kititem, unsigned char engine, unsigned char insert, unsigned char parameter, unsigned char offset, unsigned char miscmsg)
 {
     if (part < NUM_MIDI_PARTS && engine == PART::engine::padSynth)
     {
-        if (collect_readData(synth, 0, PART::control::partBusy, part, UNUSED, UNUSED, UNUSED, UNUSED, UNUSED))
+        if (collect_readData(synth, 0, PART::control::partBusy, part))
         {
             fl_alert("Part %d is busy", int(part));
             return;
@@ -71,32 +82,37 @@ void collect_data(SynthEngine *synth, float value, unsigned char type, unsigned 
     }
 
     CommandBlock putData;
-    putData.data.value = value;
+    putData.data.value.F = value;
     putData.data.control = control;
     putData.data.part = part;
     putData.data.kit = kititem;
     putData.data.engine = engine;
     putData.data.insert = insert;
     putData.data.parameter = parameter;
-    putData.data.par2 = par2;
+    putData.data.offset = offset;
+    putData.data.miscmsg = miscmsg;
 
-    unsigned char typetop = type & 0xd0; // pass through redraws *after* command
-    unsigned char buttons = type & 7;
-    if (part == TOPLEVEL::section::main && (control > 48 || control == 14))
-        type = 1; // TODO fix this properly!
-    else if (part != TOPLEVEL::section::midiLearn)
-    {
+    if (part != TOPLEVEL::section::midiLearn)
+    { // midilearn must pass though un-modified
+        unsigned char typetop = type & 0xc0;
+        unsigned char buttons = type & 7;
+        if (part == TOPLEVEL::section::main && (control != MAIN::control::volume &&  control  != MAIN::control::detune))
+            type = 1;
+
         if (buttons == 3 && Fl::event_is_click())
         {
             float newValue;
             putData.data.type = 3 | TOPLEVEL::type::Limits;
             newValue = synth->interchange.readAllData(&putData);
-            //cout << "Gui limits new value " << newValue << endl;
+            //if (newValue != value)
+                //std::cout << "Gui limits " << value <<" to " << newValue << std::endl;
             if(Fl::event_state(FL_CTRL) != 0)
             {
                 if (putData.data.type & TOPLEVEL::type::Learnable)
-                    type = 3; // previous type is now irrelevant
+                {
                     // identifying this for button 3 as MIDI learn
+                    type = TOPLEVEL::type::LearnRequest;
+                }
                 else
                 {
                     synth->getGuiMaster()->words->copy_label("Can't learn this control");
@@ -112,20 +128,20 @@ void collect_data(SynthEngine *synth, float value, unsigned char type, unsigned 
             }
             else
             {
-                putData.data.value = newValue;
-                type = TOPLEVEL::type::Write | TOPLEVEL::source::UpdateAfterSet;
+                putData.data.value.F = newValue;
+                type = TOPLEVEL::type::Write;
+                action |= TOPLEVEL::action::forceUpdate;
                 // has to be write as it's 'set default'
             }
         }
         else if(buttons > 2)
-            type = 1;
-            // change scroll wheel to button 1
+            type = 1; // change scroll wheel to button 1
+        type |= typetop;
     }
-    type |= typetop;
 
-    putData.data.type = type | TOPLEVEL::source::GUI;
-
-//cout << "collect_data value " << value << "  type " << int(type) << "  control " << int(control) << "  part " << int(part) << "  kit " << int(kititem) << "  engine " << int(engine) << "  insert " << int(insert)  << "  par " << int(parameter) << " par2 " << int(par2) << endl;
+    putData.data.type = type;
+    putData.data.source = action | TOPLEVEL::action::fromGUI;
+//cout << "collect_data value " << value << "  action " << int(action)  << "  type " << int(type) << "  control " << int(control) << "  part " << int(part) << "  kit " << int(kititem) << "  engine " << int(engine) << "  insert " << int(insert)  << "  par " << int(parameter) << " par2 " << int(par2) << endl;
     if (!synth->interchange.fromGUI->write(putData.bytes))
         synth->getRuntime().Log("Unable to write to fromGUI buffer.");
 }
@@ -135,25 +151,29 @@ void GuiUpdates::read_updates(SynthEngine *synth)
 {
     CommandBlock getData;
     bool isChanged = false;
-    Fl::lock();
     while (synth->interchange.toGUI->read(getData.bytes))
     {
+        Fl::lock();
         decode_updates(synth, &getData);
+        Fl::unlock();
         isChanged = true;
     }
     if (isChanged)
+    {
+        Fl::lock();
         Fl::check();
-    Fl::unlock();
+        Fl::unlock();
+    }
 }
 
 
 void GuiUpdates::decode_envelope(SynthEngine *synth, CommandBlock *getData)
 {
     unsigned char engine = getData->data.engine;
-    unsigned char insertParam = getData->data.parameter;
+    unsigned char parameter = getData->data.parameter;
     if (engine >= PART::engine::addMod1)
     {
-        switch(insertParam)
+        switch(parameter)
         {
             case TOPLEVEL::insertType::amplitude:
                 if (synth->getGuiMaster()->partui->adnoteui->advoice->voiceFMampenvgroup)
@@ -167,7 +187,7 @@ void GuiUpdates::decode_envelope(SynthEngine *synth, CommandBlock *getData)
     }
     else
     {
-        switch(insertParam)
+        switch(parameter)
         {
             case TOPLEVEL::insertType::amplitude:
                 if (synth->getGuiMaster()->partui->adnoteui->advoice->voiceampenvgroup)
@@ -193,14 +213,14 @@ void GuiUpdates::decode_updates(SynthEngine *synth, CommandBlock *getData)
     unsigned char kititem = getData->data.kit;
     unsigned char engine = getData->data.engine;
     unsigned char insert = getData->data.insert;
-    unsigned char insertParam = getData->data.parameter;
-    unsigned char insertPar2 = getData->data.par2;
+    unsigned char parameter = getData->data.parameter;
+    unsigned char miscmsg = getData->data.miscmsg;
 
 //        cout << "Con " << int(control) << "  Kit " << int(kititem) << "  Eng " << int(engine) << "  Ins " << int(insert) << endl;
 
-    if (control == TOPLEVEL::control::errorMessage && insert != TOPLEVEL::insert::resonanceGraphInsert) // just show a message
+    if (control == TOPLEVEL::control::textMessage) // just show a message
     {
-        synth->getGuiMaster()->words->copy_label(miscMsgPop(insertPar2).c_str());
+        synth->getGuiMaster()->words->copy_label(textMsgBuffer.fetch(miscmsg).c_str());
         synth->getGuiMaster()->cancel->hide();
         synth->getGuiMaster()->message->show();
         return;
@@ -273,7 +293,7 @@ void GuiUpdates::decode_updates(SynthEngine *synth, CommandBlock *getData)
     }
     if (npart == TOPLEVEL::section::main && control == MAIN::control::exportPadSynthSamples) // special case
     {
-        npart = insertParam & 0x3f;
+        npart = parameter & 0x3f;
         getData->data.part = npart;
     }
     if (npart >= TOPLEVEL::section::main) // main / sys / ins
@@ -317,7 +337,7 @@ void GuiUpdates::decode_updates(SynthEngine *synth, CommandBlock *getData)
                     synth->getGuiMaster()->partui->padnoteui->returns_update(getData);
                     break;
                 case TOPLEVEL::insert::LFOgroup:
-                    switch(insertParam)
+                    switch(parameter)
                     {
                         case TOPLEVEL::insertType::amplitude:
                             if (synth->getGuiMaster()->partui->padnoteui->amplfo)
@@ -340,7 +360,7 @@ void GuiUpdates::decode_updates(SynthEngine *synth, CommandBlock *getData)
                 case TOPLEVEL::insert::envelopeGroup:
                 case TOPLEVEL::insert::envelopePoints:
                 case TOPLEVEL::insert::envelopePointChange:
-                    switch(insertParam)
+                    switch(parameter)
                     {
                         case TOPLEVEL::insertType::amplitude:
                             if (synth->getGuiMaster()->partui->padnoteui->ampenv)
@@ -370,9 +390,9 @@ void GuiUpdates::decode_updates(SynthEngine *synth, CommandBlock *getData)
                     break;
             }
         }
-        else if(insertPar2 != NO_MSG)
+        else if(miscmsg != NO_MSG)
         {
-            miscMsgPop(insertPar2); // clear any text out.
+            textMsgBuffer.fetch(miscmsg); // clear any text out.
         }
         return;
     }
@@ -389,7 +409,7 @@ void GuiUpdates::decode_updates(SynthEngine *synth, CommandBlock *getData)
                 case TOPLEVEL::insert::envelopeGroup:
                 case TOPLEVEL::insert::envelopePoints:
                 case TOPLEVEL::insert::envelopePointChange:
-                    switch(insertParam)
+                    switch(parameter)
                     {
                         case TOPLEVEL::insertType::amplitude:
                             if (synth->getGuiMaster()->partui->subnoteui->ampenv)
@@ -430,7 +450,7 @@ void GuiUpdates::decode_updates(SynthEngine *synth, CommandBlock *getData)
                         synth->getGuiMaster()->partui->adnoteui->advoice->returns_update(getData);
                         break;
                     case TOPLEVEL::insert::LFOgroup:
-                        switch(insertParam)
+                        switch(parameter)
                         {
                             case TOPLEVEL::insertType::amplitude:
                                 if (synth->getGuiMaster()->partui->adnoteui->advoice->voiceamplfogroup)
@@ -480,7 +500,7 @@ void GuiUpdates::decode_updates(SynthEngine *synth, CommandBlock *getData)
                     synth->getGuiMaster()->partui->adnoteui->returns_update(getData);
                     break;
                 case TOPLEVEL::insert::LFOgroup:
-                    switch(insertParam)
+                    switch(parameter)
                     {
                         case TOPLEVEL::insertType::amplitude:
                             if (synth->getGuiMaster()->partui->adnoteui->amplfo)
@@ -503,7 +523,7 @@ void GuiUpdates::decode_updates(SynthEngine *synth, CommandBlock *getData)
                 case TOPLEVEL::insert::envelopeGroup:
                 case TOPLEVEL::insert::envelopePoints:
                 case TOPLEVEL::insert::envelopePointChange:
-                    switch(insertParam)
+                    switch(parameter)
                     {
                         case TOPLEVEL::insertType::amplitude:
                             if (synth->getGuiMaster()->partui->adnoteui->ampenv)
@@ -686,7 +706,10 @@ string convert_value(ValueType type, float val)
             return(custom_value_units(-60.0f*(1.0f-(int)val/96.0f),"dB",1));
 
         case VC_ADDVoiceVolume:
-            return(custom_value_units(-60.0f*(1.0f-lrint(val)/127.0f),"dB",1));
+            if (val < 1)
+                return "-inf dB";
+            else
+                return(custom_value_units(-60.0f*(1.0f-lrint(val)/127.0f),"dB",1));
 
         case VC_ADDVoiceDelay:
             if((int) val == 0)
@@ -707,7 +730,18 @@ string convert_value(ValueType type, float val)
                     "\n(default: +/- " + custom_value_units(200 * f, "cents )");
 
         case VC_PartVolume:
-            return(custom_value_units((val-96.0f)/96.0f*40.0f,"dB",1));
+            if (val < 0.2f)
+                return "-inf dB";
+            else
+                return(custom_value_units((val-96.0f)/96.0f*40.0f,"dB",1));
+
+        case VC_PartHumaniseVelocity:
+            s = "Attenuation: ";
+            i = (int) val;
+            if (i == 0)
+                return s + "disabled";
+            else
+                return s + "between 0 and " + to_string(i) + "%";
 
         case VC_PanningRandom:
             i = lrint(val);

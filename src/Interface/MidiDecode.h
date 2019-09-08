@@ -27,12 +27,11 @@
 #include <list>
 #include <string>
 
-#include "Misc/MiscFuncs.h"
 #include "Interface/InterChange.h"
 
 class SynthEngine;
 
-class MidiDecode : private MiscFuncs
+class MidiDecode
 {
     public:
         MidiDecode(SynthEngine *_synth);
@@ -48,6 +47,7 @@ class MidiDecode : private MiscFuncs
         bool nrpnDecode(unsigned char ch, int ctrl, int param, bool in_place);
         bool nrpnRunVector(unsigned char ch, int ctrl, int param, bool inSync);
         void nrpnProcessData(unsigned char chan, int type, int par, bool in_place);
+        bool nrpnProcessHistory(unsigned char nLow, unsigned char dHigh, unsigned char dLow, bool in_place);
         void nrpnDirectPart(int dHigh, int par);
         void nrpnSetVector(int dHigh, unsigned char chan,  int par);
 

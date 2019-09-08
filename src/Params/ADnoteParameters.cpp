@@ -40,7 +40,7 @@ ADnoteParameters::ADnoteParameters(FFTwrapper *fft_, SynthEngine *_synth) :
     Presets(_synth),
     fft(fft_)
 {
-    setpresettype("ADnoteParameters");
+    setpresettype("Padsyth");
     GlobalPar.FreqEnvelope = new EnvelopeParams(0, 0, synth);
     GlobalPar.FreqEnvelope->ASRinit(64, 50, 64, 60);
     GlobalPar.FreqLfo = new LFOParams(70, 0, 64, 0, 0, 0, 0, 0, synth);
@@ -852,13 +852,12 @@ void ADnoteParameters::getfromXMLsection(XMLwrapper *xml, int n)
 
 float ADnoteParameters::getLimits(CommandBlock *getData)
 {
-    float value = getData->data.value;
-    unsigned char type = getData->data.type;
-    int request = type & TOPLEVEL::type::Default;
+    float value = getData->data.value.F;
+    int request = int(getData->data.type & TOPLEVEL::type::Default);
     int control = getData->data.control;
     int engine = getData->data.engine;
 
-    type &= (TOPLEVEL::source::MIDI | TOPLEVEL::source::CLI | TOPLEVEL::source::GUI); // source bits only
+    unsigned char type = 0;
 
     // addnote defaults
     int min = 0;

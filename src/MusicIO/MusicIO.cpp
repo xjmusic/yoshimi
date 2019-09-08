@@ -19,20 +19,19 @@
     Modified May 2019
 */
 
-#include <errno.h>
-#include <cstring>
-#include <fftw3.h>
 
 #include "Misc/Config.h"
 #include "Misc/SynthEngine.h"
+#include "Misc/FormatFuncs.h"
 #include "MusicIO/MusicIO.h"
 
-#include <unistd.h>
-#include <iostream>
+
+using func::asString;
+
 
 MusicIO::MusicIO(SynthEngine *_synth) :
     interleaved(NULL),
-    synth(_synth)//,
+    synth(_synth)
 {
     memset(zynLeft, 0, sizeof(float *) * (NUM_MIDI_PARTS + 1));
     memset(zynRight, 0, sizeof(float *) * (NUM_MIDI_PARTS + 1));
@@ -94,7 +93,7 @@ void MusicIO::setMidi(unsigned char par0, unsigned char par1, unsigned char par2
         }
         else
         {
-            putData.data.value = float(par2);
+            putData.data.value.F = float(par2);
             putData.data.type = 8;
             putData.data.control = (event == 0x80);
             putData.data.part = TOPLEVEL::section::midiIn;

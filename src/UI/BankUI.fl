@@ -30,11 +30,13 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 This file is derivative of original ZynAddSubFX code.
 
-Modified April 2019
-} {selected in_source in_header
+} {in_source in_header
 }
 
 decl {\#include <iostream>} {public local
+}
+
+decl {\#include <unistd.h>} {public local
 }
 
 decl {\#include <FL/Fl_Button.H>} {public local
@@ -59,6 +61,18 @@ decl {\#include "Misc/SynthEngine.h"} {public local
 }
 
 decl {\#include "MasterUI.h"} {private local
+}
+
+decl {\#include "Misc/FormatFuncs.h"
+    using func::string2int;
+    using func::asString;} {private local
+}
+
+decl {\#include "Misc/TextMsgBuffer.h"
+
+    namespace { // Implementation details...
+        TextMsgBuffer& textMsgBuffer = TextMsgBuffer::instance();
+    }} {private local
 }
 
 class BankProcess_ {} {
@@ -113,19 +127,18 @@ class BankSlot {: {public Fl_Button, BankProcess_}
         labelfont(0);
         labelsize(13);
         align(FL_ALIGN_LEFT|FL_ALIGN_INSIDE|FL_ALIGN_CLIP);
-        highlight = 0;
-        refresh();} {}
+        highlight = 0;} {}
   }
-  Function {refresh()} {} {
+  Function {refresh(int bk, int rt)} {} {
     code {//
-    string instrName = bank->getnamenumbered(nslot);
+    string instrName = bank->getnamenumbered(nslot, bk, rt);
     copy_label(instrName.c_str());
-    if (bank->engines_used(nslot) & 8)
+    rootID = rt;
+    bankID = bk;
+    if (bank->engines_used(rt, bk, nslot) & 8)
         labelcolor(YOSHI_COLOUR);
-        //labelfont(FL_TIMES_ITALIC);
     else
-        labelcolor(0);
-        //labelfont(FL_HELVETICA);} {}
+        labelcolor(0);} {}
   }
   decl {int *what, *whatslot, nslot, highlight, *nselected;} {private local
   }
@@ -142,14 +155,14 @@ class BankSlot {: {public Fl_Button, BankProcess_}
     if (type() == FL_HIDDEN_BUTTON) return;
     int acol, scol, pcol, bcol;
     int wid = w() * 0.334;
-    int engine = bank->engines_used(nslot);
+    int engine = bank->engines_used(rootID, bankID, nslot);
     if (*nselected == nslot)
     {
         acol = 6;
         scol = 6;
         pcol = 6;
     }
-    else if(bank->emptyslot(nslot))
+    else if(bank->emptyslot(rootID, bankID, nslot))
     {
         if (nslot < 128)
         {
@@ -204,6 +217,10 @@ class BankSlot {: {public Fl_Button, BankProcess_}
         draw_label();
 
     if (Fl::focus() == this) draw_focus();} {}
+  }
+  decl {int rootID;} {private local
+  }
+  decl {int bankID;} {private local
   }
 }
 
@@ -284,12 +301,12 @@ class RootSlot {: {public Fl_Button, RootProcess_}
   }
 }
 
-class BankUI {: {public BankProcess_, RootProcess_, MiscFuncs}
+class BankUI {selected : {public BankProcess_, RootProcess_}
 } {
   Function {make_window()} {} {
     Fl_Window instrumentuiwindow {
       label Bank
-      xywh {84 346 780 575} type Double hide
+      xywh {119 271 780 575} type Double hide
     } {
       Fl_Choice banklist {
         callback {//
@@ -301,11 +318,25 @@ class BankUI {: {public BankProcess_, RootProcess_, MiscFuncs}
         const BankEntry &bankEntry = bank->getBank(nbank);
         if (!bank->setCurrentBankID(nbank))
             fl_alert("Error: Could not load the bank from the directory\\n%s.", bankEntry.dirname.c_str());
+
+        int rt = fetchData(0, BANK::control::selectRoot, TOPLEVEL::section::bank);
+        int bk = fetchData(0, BANK::control::selectBank, TOPLEVEL::section::bank);
         for (int i = 0; i < BANK_SIZE; ++i)
-            bs[i]->refresh();
+            bs[i]->refresh(bk, rt);
         refreshmainwindow();}
         xywh {5 8 199 20} down_box BORDER_BOX selection_color 7 labelfont 1 labelsize 12 align 0 textsize 12
       } {}
+      Fl_Button B_search {
+        label Search
+        callback {//
+       if (unsearched)
+       {
+           fillBrowser(1);
+           unsearched = false;
+       }
+       searchwin->show();}
+        tooltip {Select instrument from list, by type} xywh {230 5 93 25} box PLASTIC_UP_BOX labelfont 1 labelsize 11 align 128
+      }
       Fl_Button {} {
         label Roots
         callback {//
@@ -456,16 +487,13 @@ class BankUI {: {public BankProcess_, RootProcess_, MiscFuncs}
         instrumentuiwindow->hide();}
         tooltip {Right click: also reopen previous} xywh {665 539 70 24} box THIN_UP_BOX labelsize 12
       }
-      Fl_Group engines {
+      Fl_Group {} {
         xywh {468 528 151 42} box ENGRAVED_FRAME
       } {
-        Fl_Check_Button {} {
-          label {Show synth engines}
+        Fl_Check_Button enginecheck {
+          label {Show engines/types}
           callback {//
-          synth->getRuntime().checksynthengines = (int) o->value();
-          rescan_for_banks(true);
-          synth->getGuiMaster()->partui->checkEngines();
-          synth->getRuntime().configChanged = true;}
+          send_data(TOPLEVEL::action::forceUpdate, CONFIG::control::showEnginesTypes, o->value(), TOPLEVEL::type::Integer, TOPLEVEL::section::config);}
           xywh {477 531 136 15} down_box DOWN_BOX labelsize 11
           code0 {o->value(synth->getRuntime().checksynthengines);}
         }
@@ -489,10 +517,139 @@ class BankUI {: {public BankProcess_, RootProcess_, MiscFuncs}
         }
       }
     }
+    Fl_Window searchwin {
+      label {Bank Search}
+      xywh {444 123 305 490} type Double box PLASTIC_THIN_UP_BOX color 22 hide modal
+    } {
+      Fl_Browser searchbrowse {
+        callback {//
+        if (!o->value())
+            return;
+        int result = o->value();
+        if (result < 0)
+            return;
+        string line = string(o->text(result));
+        int root = string2int(line.substr(0, 3));
+        int bank = string2int(line.substr(5, 3));
+        int inst = (string2int(line.substr(10, 3))) - 1;
+         //std::cout << root << "  " << bank << "  " << inst << std::endl;
+         send_data(TOPLEVEL::action::forceUpdate, MAIN::control::loadInstrumentFromBank, inst, TOPLEVEL::type::Integer, TOPLEVEL::section::main, synth->getGuiMaster()->activePart, bank, root);}
+        xywh {12 65 282 374} type Select labelfont 4
+      }
+      Fl_Button {} {
+        label Close
+        callback {//
+        searchwin->hide();}
+        xywh {228 451 65 24} align 192
+      }
+      Fl_Group {} {
+        xywh {25 1 210 35}
+      } {
+        Fl_Choice searchType {
+          label {Type:}
+          callback {//
+          searchbrowse->clear();
+          int result = o->value();
+          if (result >= 0)
+          {
+              fillBrowser(result);
+              noEntries->hide();
+          }
+          else
+              noEntries->show();}
+          xywh {70 12 140 24} down_box BORDER_BOX labelfont 1 labelsize 12 textsize 12
+        } {
+          MenuItem {} {
+            label {(undefined)}
+            xywh {25 25 140 20} labelfont 1 labelsize 11
+          }
+          MenuItem {} {
+            label Piano
+            xywh {15 15 140 20} labelfont 1 labelsize 11
+          }
+          MenuItem {} {
+            label {Chromatic Percussion}
+            xywh {25 25 140 20} labelfont 1 labelsize 11
+          }
+          MenuItem {} {
+            label Organ
+            xywh {35 35 140 20} labelfont 1 labelsize 11
+          }
+          MenuItem {} {
+            label Guitar
+            xywh {45 45 140 20} labelfont 1 labelsize 11
+          }
+          MenuItem {} {
+            label Bass
+            xywh {55 55 140 20} labelfont 1 labelsize 11
+          }
+          MenuItem {} {
+            label {Solo Strings}
+            xywh {65 65 140 20} labelfont 1 labelsize 11
+          }
+          MenuItem {} {
+            label Ensemble
+            xywh {75 75 140 20} labelfont 1 labelsize 11
+          }
+          MenuItem {} {
+            label Brass
+            xywh {85 85 140 20} labelfont 1 labelsize 11
+          }
+          MenuItem {} {
+            label Reed
+            xywh {95 95 140 20} labelfont 1 labelsize 11
+          }
+          MenuItem {} {
+            label Pipe
+            xywh {105 105 140 20} labelfont 1 labelsize 11
+          }
+          MenuItem {} {
+            label {Synth Lead}
+            xywh {115 115 140 20} labelfont 1 labelsize 11
+          }
+          MenuItem {} {
+            label {Synth Pad}
+            xywh {125 125 140 20} labelfont 1 labelsize 11
+          }
+          MenuItem {} {
+            label {Synth Effects}
+            xywh {135 135 140 20} labelfont 1 labelsize 11
+          }
+          MenuItem {} {
+            label Ethnic
+            xywh {145 145 140 20} labelfont 1 labelsize 11
+          }
+          MenuItem {} {
+            label Percussive
+            xywh {155 155 140 20} labelfont 1 labelsize 11
+          }
+          MenuItem {} {
+            label {Sound Effects}
+            xywh {165 165 140 20} labelfont 1 labelsize 11
+          }
+        }
+      }
+      Fl_Text_Display {} {
+        label Root
+        xywh {1 34 50 12} box NO_BOX labelfont 1 labelsize 11 align 2
+      }
+      Fl_Text_Display {} {
+        label Bank
+        xywh {40 34 50 12} box NO_BOX labelfont 1 labelsize 11 align 2
+      }
+      Fl_Text_Display {} {
+        label Instrument
+        xywh {100 35 50 12} box NO_BOX labelfont 1 labelsize 11 align 2
+      }
+      Fl_Text_Display noEntries {
+        label {No Entries}
+        xywh {70 195 177 0} labelfont 1 labelsize 30 labelcolor 88 hide deactivate
+      }
+    }
     Fl_Window bankuiwindow {
       label Root
       xywh {84 223 775 575} type Double labelsize 12 hide
-      code0 {o->copy_label(bank->getRootFileTitle().c_str());}
+      code0 {o->copy_label(bank->getRootFileTitle(fetchData(0, BANK::control::selectRoot, TOPLEVEL::section::bank)).c_str());}
       code1 {if (synth->getUniqueId() == 0) rootmodeselect->show();}
     } {
       Fl_Button {} {
@@ -788,32 +945,78 @@ class BankUI {: {public BankProcess_, RootProcess_, MiscFuncs}
       }
     }
   }
-  Function {send_data(int control, float value, int type, int part = UNUSED, int kititem = UNUSED, int engine = UNUSED, int insert = UNUSED, int parameter = UNUSED, int par2 = UNUSED)} {} {
+  Function {fillBrowser(int group)} {} {
+    code {//
+         /* for (int root = 0; root < 128; ++root)
+          {
+              for (int bank = 0; bank < 128; ++ bank)
+              {
+                  for (int inst = 0; inst < 160; ++ inst)
+                  {
+                      int ID = synth->getBankRef().getType(inst, bank, root);
+                      if (ID == group)
+                      {
+                          //string line = asString(root, 3) + ": " + asString(bank, 3) + ". " + asString(inst + 1, 3) + "  " + synth->getBankRef().getname(inst, bank, root);
+                          searchbrowse->add(line.c_str());
+                      }
+                  }
+              }
+          }*/
+          string line;
+          do
+          {
+              line = textMsgBuffer.fetch(fetchData(0, BANK::control::findInstrumentName, TOPLEVEL::section::bank, UNUSED, UNUSED, UNUSED, group));
+              if (line !="*")
+                  searchbrowse->add(line.c_str());
+          } while (line != "*");} {}
+  }
+  Function {send_data(int action, int control, float value, int type, int part = UNUSED, int kititem = UNUSED, int engine = UNUSED, int insert = UNUSED, int parameter = UNUSED, int miscmsg = UNUSED)} {} {
     code {//
         type |= TOPLEVEL::type::Write;
-        collect_data(synth, value, type, control, part, kititem, engine, insert, parameter, par2);} {}
+        collect_data(synth, value, action, type, control, part, kititem, engine, insert, parameter, UNUSED, miscmsg);} {}
+  }
+  Function {fetchData(float value, int control, int part, int kititem = UNUSED, int engine = UNUSED, int insert = UNUSED, int parameter = UNUSED, int offset = UNUSED, int miscmsg = UNUSED, int request = UNUSED)} {return_type float
+  } {
+    code {//
+        return collect_readData(synth, value, control, part, kititem, engine, insert, parameter, offset, miscmsg, request);} {}
   }
   Function {returns_update(CommandBlock *getData)} {} {
     code {//
-    //int value_int = getData->data.value;
+    //int value_int = getData->data.value.F;
     unsigned char control = getData->data.control;
-    unsigned int par2 = getData->data.par2;
-    string message = miscMsgPop(par2);
+    int source = getData->data.source & TOPLEVEL::action::noAction;
+    string message = textMsgBuffer.fetch(getData->data.miscmsg);
     switch(control)
     {
+        case BANK::control::exportBank:
+            if(source == TOPLEVEL::action::fromGUI)
+                fl_alert("%s",message.c_str());
+        break;
+        case BANK::control::deleteInstrument:
+            if (message.find("FAILED") != std::string::npos)
+            {
+                if(source == TOPLEVEL::action::fromGUI)
+                    fl_alert("%s",message.c_str());
+            }
+            else
+                rescan_for_banks(false);
+            break;
         case BANK::control::selectFirstInstrumentToSwap:
             break;
         case BANK::control::selectSecondInstrumentAndSwap:
-            if (message > "")
-                fl_alert("%s",message.c_str());
+
+            if (message.find("FAILED") != std::string::npos)
+                if(source == TOPLEVEL::action::fromGUI)
+                    fl_alert("%s",message.c_str());
             rescan_for_banks(false);
             break;
 
         case BANK::control::selectFirstBankToSwap:
             break;
         case BANK::control::selectSecondBankAndSwap:
-            if (message > "")
-                fl_alert("%s",message.c_str());
+            if (message.find("FAILED") != std::string::npos)
+                if(source == TOPLEVEL::action::fromGUI)
+                    fl_alert("%s",message.c_str());
             rescan_for_banks(false);
             break;
     }} {}
@@ -872,29 +1075,38 @@ class BankUI {: {public BankProcess_, RootProcess_, MiscFuncs}
   Function {init(Fl_Spinner *cbwig_)} {} {
     code {//
     cbwig = cbwig_;
-    rescan_for_banks(false);} {}
+    rescan_for_banks(false);
+    unsearched = true;
+    searchType->value(1);
+    if(synth->getRuntime().checksynthengines)
+        B_search->activate();
+    else
+        B_search->deactivate();} {}
   }
   Function {process()} {return_type void
   } {
     code {//
         int slot = this->slot;
         int curPart = synth->getRuntime().currentPart;
-        string thisname =  bank->getname(slot);
-        if ((what == 1 || what == 3) && mode == 1 && !bank->emptyslot(slot))
+        int rt = fetchData(0, BANK::control::selectRoot, TOPLEVEL::section::bank);
+        int bk = fetchData(0, BANK::control::selectBank, TOPLEVEL::section::bank);
+        bool slotFilled = !bank->emptyslot(rt, bk, slot);
+        string thisname =  bank->getname(slot, bk, rt);
+        if ((what == 1 || what == 3) && mode == 1 && slotFilled)
         {
             if (synth->getGuiMaster()->activePart == UNUSED)
             {
                 fl_alert("Active part disabled");
                 return;
             }
-            send_data(MAIN::control::loadInstrument, synth->getGuiMaster()->activePart, TOPLEVEL::type::Integer | TOPLEVEL::source::UpdateAfterSet, TOPLEVEL::section::main, UNUSED, UNUSED, UNUSED, UNUSED, slot);
+            send_data(TOPLEVEL::action::forceUpdate, MAIN::control::loadInstrumentFromBank, slot, TOPLEVEL::type::Integer, TOPLEVEL::section::main,synth->getGuiMaster()->activePart);
             // Reads from slot
             if (what == 3)
                 instrumentuiwindow->hide();
             return;
         }
 
-        if (mode == 5 && !bank->emptyslot(slot))
+        if (mode == 5 && slotFilled)
         {   // Rename slot
             const char *newname = fl_input("Instrument name:", thisname.c_str());
             if (newname)
@@ -903,7 +1115,7 @@ class BankUI {: {public BankProcess_, RootProcess_, MiscFuncs}
                     fl_alert("Can't use name of default sound");
                 else if (strlen(newname) > 3)
                 {
-                    if (!bank->setname(slot, string(newname), -1))
+                    if (!bank->setname(slot, string(newname), slot, bk, bk, rt, rt))
                     {
                         setread();
                         fl_alert("Could not rename instrument %d to %s", slot, newname);
@@ -911,7 +1123,7 @@ class BankUI {: {public BankProcess_, RootProcess_, MiscFuncs}
                     else
                     {
                         synth->part[curPart]->Pname = newname;
-                        send_data(MAIN::control::saveInstrument, float(synth->getGuiMaster()->activePart), TOPLEVEL::type::Integer | TOPLEVEL::source::UpdateAfterSet, TOPLEVEL::section::main, UNUSED, UNUSED, slot, TOPLEVEL::route::lowPriority);
+                        send_data(TOPLEVEL::action::lowPrio | TOPLEVEL::action::forceUpdate, MAIN::control::saveInstrument, float(synth->getGuiMaster()->activePart), TOPLEVEL::type::Integer, TOPLEVEL::section::main, UNUSED, UNUSED, slot);
                     }
                 }
             }
@@ -928,7 +1140,7 @@ class BankUI {: {public BankProcess_, RootProcess_, MiscFuncs}
                 setread();
                 doit = false;
             }
-            else if (!bank->emptyslot(slot))
+            else if (slotFilled)
             {
                 if (fl_choice("Overwrite the slot no. %d ?", NULL, "No", "Yes", slot + 1) < 2)
                 {
@@ -938,23 +1150,16 @@ class BankUI {: {public BankProcess_, RootProcess_, MiscFuncs}
             }
             if (doit)
             {
-                send_data(MAIN::control::saveInstrument, float(curPart), TOPLEVEL::type::Integer | TOPLEVEL::source::UpdateAfterSet, TOPLEVEL::section::main, UNUSED, UNUSED, slot, TOPLEVEL::route::lowPriority);
+                send_data(TOPLEVEL::action::lowPrio | TOPLEVEL::action::forceUpdate, MAIN::control::saveInstrument, float(curPart), TOPLEVEL::type::Integer, TOPLEVEL::section::main, UNUSED, UNUSED, slot);
                 setread();
             }
         }
 
-        if (mode == 3 && !bank->emptyslot(slot))
+        if (mode == 3 && slotFilled)
         {   // Clears the slot (choices reversed for 'No' priority)
             if (fl_choice("Clear the slot no. %d ?", NULL, "No", "Yes", slot + 1) > 1)
-            {
-                if (!bank->clearslot(slot))
-                    fl_alert("Could not clear this location");
-                else
-                    bs[slot]->refresh();
-                setread();
-            }
-            else
-                setread();
+                send_data(TOPLEVEL::action::lowPrio | TOPLEVEL::action::forceUpdate, BANK::control::deleteInstrument, slot, TOPLEVEL::type::Write, TOPLEVEL::section::bank);
+            setread();
         }
 
         if (mode == 4)
@@ -962,14 +1167,14 @@ class BankUI {: {public BankProcess_, RootProcess_, MiscFuncs}
             bool done = false;
             if (what == 1 && nselected >= 0)
             {
-                send_data(BANK::control::selectSecondInstrumentAndSwap, 0, TOPLEVEL::type::Integer | TOPLEVEL::source::UpdateAfterSet, TOPLEVEL::section::bank, UNUSED, UNUSED, slot, TOPLEVEL::route::lowPriority);
+                send_data(TOPLEVEL::action::lowPrio | TOPLEVEL::action::forceUpdate, BANK::control::selectSecondInstrumentAndSwap, 0, TOPLEVEL::type::Integer, TOPLEVEL::section::bank, UNUSED, UNUSED, slot);
                 nselected = -1;
                 setread();
                 done = true;
             }
             if ((nselected < 0 || what == 2) && !done)
             {
-                send_data(BANK::control::selectFirstInstrumentToSwap, 0, TOPLEVEL::type::Integer, TOPLEVEL::section::bank, UNUSED, UNUSED, slot, TOPLEVEL::route::lowPriority);
+                send_data(TOPLEVEL::action::lowPrio, BANK::control::selectFirstInstrumentToSwap, 0, TOPLEVEL::type::Integer, TOPLEVEL::section::bank, UNUSED, UNUSED, slot);
                 nselected = slot;
             }
         }
@@ -980,12 +1185,13 @@ class BankUI {: {public BankProcess_, RootProcess_, MiscFuncs}
   } {
     code {//
     unsigned int slot = this->slot;
-    string thisname = bank->getBankName(slot);
+    int rt = fetchData(0, BANK::control::selectRoot, TOPLEVEL::section::bank);
+    string thisname = bank->getBankName(slot, rt);
 
     if ((what == 1 || what == 3) && r_mode == 1 && !thisname.empty())
     {
         // Selects from slot
-        const BankEntry &bankEntry = bank->getBank(slot);
+        const BankEntry &bankEntry = bank->getBank(slot, rt);
 
         if (!bank->setCurrentBankID(slot))
         {
@@ -1020,7 +1226,7 @@ class BankUI {: {public BankProcess_, RootProcess_, MiscFuncs}
     	const char *dirname;
         dirname = fl_dir_chooser("Export a bank:",synth->getRuntime().userHome.c_str(), 0);
         if (dirname)
-            send_data(MAIN::control::exportBank, slot, TOPLEVEL::type::Integer | TOPLEVEL::source::UpdateAfterSet, TOPLEVEL::section::main, UNUSED, UNUSED, UNUSED, TOPLEVEL::route::lowPriority, miscMsgPush(string(dirname)));
+            send_data(TOPLEVEL::action::lowPrio | TOPLEVEL::action::forceUpdate, MAIN::control::exportBank, slot, TOPLEVEL::type::Integer, TOPLEVEL::section::main, UNUSED, UNUSED, UNUSED, UNUSED, textMsgBuffer.push(string(dirname)));
    	setrootread();
     }
 
@@ -1029,7 +1235,7 @@ class BankUI {: {public BankProcess_, RootProcess_, MiscFuncs}
     	const char *dirname;
         dirname = fl_dir_chooser("Import a new bank:",synth->getRuntime().userHome.c_str(), 0);
         if (dirname)
-            send_data(MAIN::control::importBank, slot, TOPLEVEL::type::Integer | TOPLEVEL::source::UpdateAfterSet, TOPLEVEL::section::main, UNUSED, UNUSED, UNUSED, TOPLEVEL::route::lowPriority, miscMsgPush(string(dirname)));
+            send_data(TOPLEVEL::action::lowPrio | TOPLEVEL::action::forceUpdate, MAIN::control::importBank, slot, TOPLEVEL::type::Integer, TOPLEVEL::section::main, UNUSED, UNUSED, UNUSED, UNUSED, textMsgBuffer.push(string(dirname)));
    	setrootread();
     }
 
@@ -1096,7 +1302,7 @@ class BankUI {: {public BankProcess_, RootProcess_, MiscFuncs}
                                     NULL, "STOP !", "Continue", count) > 1;
             if (clearit)
             {
-                send_data(MAIN::control::deleteBank, slot, TOPLEVEL::type::Integer | TOPLEVEL::source::UpdateAfterSet, TOPLEVEL::section::main, UNUSED, UNUSED, UNUSED, TOPLEVEL::route::lowPriority);
+                send_data(TOPLEVEL::action::lowPrio | TOPLEVEL::action::forceUpdate, MAIN::control::deleteBank, slot, TOPLEVEL::type::Integer, TOPLEVEL::section::main);
             }
         }
         setrootread();
@@ -1109,7 +1315,7 @@ class BankUI {: {public BankProcess_, RootProcess_, MiscFuncs}
             bool done = false;
             if (what == 1 && rselected >= 0)
             {
-                send_data(BANK::control::selectSecondBankAndSwap, 0, TOPLEVEL::type::Integer | TOPLEVEL::source::UpdateAfterSet, TOPLEVEL::section::bank, slot, UNUSED, UNUSED, TOPLEVEL::route::lowPriority);
+                send_data(TOPLEVEL::action::lowPrio | TOPLEVEL::action::forceUpdate, BANK::control::selectSecondBankAndSwap, 0, TOPLEVEL::type::Integer, TOPLEVEL::section::bank, slot);
                 rselected = -1;
                 rescan_for_banks(false);
                 setrootread();
@@ -1117,7 +1323,7 @@ class BankUI {: {public BankProcess_, RootProcess_, MiscFuncs}
             }
             if ((rselected < 0 || what == 2) && !done)
             {
-                send_data(BANK::control::selectFirstBankToSwap, 0, TOPLEVEL::type::Integer, TOPLEVEL::section::bank, slot, UNUSED, UNUSED, TOPLEVEL::route::lowPriority);
+                send_data(TOPLEVEL::action::lowPrio, BANK::control::selectFirstBankToSwap, 0, TOPLEVEL::type::Integer, TOPLEVEL::section::bank, slot);
                 rselected = slot;
                 rs[slot]->rootrefresh();
             }
@@ -1145,16 +1351,21 @@ class BankUI {: {public BankProcess_, RootProcess_, MiscFuncs}
   }
   Function {refreshmainwindow()} {} {
     code {//
-    instrumentuiwindow->copy_label(bank->getBankFileTitle().c_str());
-    bankuiwindow->copy_label(bank->getRootFileTitle().c_str());
+    int bk = fetchData(0, BANK::control::selectBank, TOPLEVEL::section::bank);
+    int rt = fetchData(0, BANK::control::selectRoot, TOPLEVEL::section::bank);
+
+    instrumentuiwindow->copy_label(bank->getBankFileTitle(rt, bk).c_str());
+
+    bankuiwindow->copy_label(bank->getRootFileTitle(rt).c_str());
+
     for (int i = 0; i < BANK_SIZE; ++i)
-        bs[i]->refresh();
+        bs[i]->refresh(bk, rt);
     for (int i = 0; i < ROOT_SIZE; ++i)
         rs[i]->rootrefresh();} {}
   }
-  Function {refreshbankslot(int ins)} {} {
+  Function {refreshbankslot(int ins, int bk, int rt)} {} {
     code {//
-bs[ins]->refresh();} {}
+        bs[ins]->refresh(bk, rt);} {}
   }
   Function {removeselection()} {} {
     code {//
@@ -1162,7 +1373,7 @@ bs[ins]->refresh();} {}
         {
             int ns = nselected;
             nselected = -1;
-            bs[ns]->refresh();
+            bs[ns]->refresh(fetchData(0, BANK::control::selectBank, TOPLEVEL::section::bank), fetchData(0, BANK::control::selectRoot, TOPLEVEL::section::bank));
         }
         if (rselected >= 0)
         {
@@ -1178,14 +1389,14 @@ bs[ins]->refresh();} {}
     {
         bank->rescanforbanks();
     }
-    const BankEntryMap &banks = bank->getBanks(synth->getRuntime().currentRoot);
+    const BankEntryMap &banks = bank->getBanks(fetchData(0, BANK::control::selectRoot, TOPLEVEL::section::bank));
     BankEntryMap::const_iterator it;
     for (it = banks.begin(); it != banks.end(); ++it)
     {
         if (!it->second.dirname.empty())
         {
             int n = banklist->add((asString(it->first) + ". " + it->second.dirname).c_str(), (const char *)0, (Fl_Callback*)0, reinterpret_cast<void *>(it->first));
-            if(it->first == synth->getRuntime().currentBank)
+            if(it->first == fetchData(0, BANK::control::selectBank, TOPLEVEL::section::bank))
             {
                 banklist->value(n); // ensure correct bank in list
             }
@@ -1195,7 +1406,7 @@ bs[ins]->refresh();} {}
   }
   Function {set_bank_slot()} {} {
     code {//
-    size_t curID = synth->getRuntime().currentBank;
+    size_t curID = fetchData(0, BANK::control::selectBank, TOPLEVEL::section::bank);
     const Fl_Menu_Item *curItem = 0;
     for(int i = 0; i < banklist->size(); i++)
     {
@@ -1244,7 +1455,7 @@ bs[ins]->refresh();} {}
         if (!it->second.path.empty())
         {
             tmp = asString(it->first) + ". " + it->second.path;
-            if(it->first == synth->getRuntime().currentRoot)
+            if(it->first == fetchData(0, BANK::control::selectRoot, TOPLEVEL::section::bank))
             {
                 tmp += " *";
             }
@@ -1294,5 +1505,7 @@ bs[ins]->refresh();} {}
   decl {int bankFrom;} {private local
   }
   decl {int instFrom;} {private local
+  }
+  decl {bool unsearched;} {public local
   }
 }

@@ -22,20 +22,28 @@
 
     This file is derivative of original ZynAddSubFX code.
 
-    Modified May 2019
 */
 
 #include <sys/types.h>
 #include <zlib.h>
 #include <sstream>
 #include <iostream>
+#include <string>
 
 #include "Misc/Config.h"
 #include "Misc/XMLwrapper.h"
 #include "Misc/SynthEngine.h"
+#include "Misc/FileMgrFuncs.h"
+#include "Misc/FormatFuncs.h"
 
-int xml_k = 0;
-char tabs[STACKSIZE + 2];
+using file::saveText;
+using file::loadGzipped;
+using file::saveGzipped;
+using func::string2int;
+using func::string2float;
+using func::asLongString;
+using func::asString;
+
 
 const char *XMLwrapper_whitespace_callback(mxml_node_t *node, int where)
 {
@@ -54,6 +62,7 @@ const char *XMLwrapper_whitespace_callback(mxml_node_t *node, int where)
 
 XMLwrapper::XMLwrapper(SynthEngine *_synth, bool _isYoshi, bool includeBase) :
     stackpos(0),
+    xml_k(0),
     isYoshi(_isYoshi),
     synth(_synth)
 {
@@ -96,7 +105,7 @@ XMLwrapper::XMLwrapper(SynthEngine *_synth, bool _isYoshi, bool includeBase) :
 
     info = addparams0("INFORMATION"); // specifications
 
-    if (synth->getUniqueId() == 0 && (synth->getRuntime().xmlType == XML_STATE || synth->getRuntime().xmlType == XML_CONFIG))
+    if (synth->getUniqueId() == 0 && (synth->getRuntime().xmlType == TOPLEVEL::XML::State || synth->getRuntime().xmlType == TOPLEVEL::XML::Config))
     {
         beginbranch("BASE_PARAMETERS");
             addpar("sample_rate", synth->getRuntime().Samplerate);
@@ -109,11 +118,22 @@ XMLwrapper::XMLwrapper(SynthEngine *_synth, bool _isYoshi, bool includeBase) :
             addparbool("enable_auto_instance", synth->getRuntime().autoInstance);
             addparU("active_instances", synth->getRuntime().activeInstance);
             addpar("show_CLI_context", synth->getRuntime().showCLIcontext);
+
+            for (int i = 0; i < MAX_PRESET_DIRS; ++i)
+            {
+                if (synth->getRuntime().presetsDirlist[i].size())
+                {
+                    beginbranch("PRESETSROOT",i);
+                    addparstr("presets_root", synth->getRuntime().presetsDirlist[i]);
+                    endbranch();
+                }
+            }
+
         endbranch();
         return;
     }
 
-    if (synth->getRuntime().xmlType <= XML_MICROTONAL || synth->getRuntime().xmlType == XML_PRESETS)
+    if (synth->getRuntime().xmlType <= TOPLEVEL::XML::Scale || synth->getRuntime().xmlType == TOPLEVEL::XML::Presets)
     {
             beginbranch("BASE_PARAMETERS");
                 addpar("max_midi_parts", NUM_MIDI_CHANNELS);
@@ -134,14 +154,15 @@ XMLwrapper::~XMLwrapper()
 }
 
 
-void XMLwrapper::checkfileinformation(const std::string& filename)
+void XMLwrapper::checkfileinformation(const std::string& filename, unsigned int& names, int& type)
 {
-    stackpos = 0;
+    stackpos = 0; // we don't seem to be using any of this!
     memset(&parentstack, 0, sizeof(parentstack));
-    information.PADsynth_used = 0;
     if (tree)
         mxmlDelete(tree);
     tree = NULL;
+
+
     std::string report = "";
     char *xmldata = loadGzipped(filename, &report);
     if (report != "")
@@ -153,49 +174,56 @@ void XMLwrapper::checkfileinformation(const std::string& filename)
     information.yoshiType = (first!= NULL);
     char *start = strstr(xmldata, "<INFORMATION>");
     char *end = strstr(xmldata, "</INFORMATION>");
-    if (!start || !end || start >= end)
-    {
-        slowinfosearch(xmldata);
-        delete [] xmldata;
-        return;
-    }
-
-    // Andrew: just make it simple
-    // Will: but not too simple :)
     char *idx = start;
-    unsigned short names = 0;
+    unsigned int seen = 0;
 
-    /* the following could be in any order. We are checking for
-     * the actual existence of the fields as well as their value.
-     */
-    idx = strstr(start, "name=\"ADDsynth_used\"");
-    if (idx != NULL)
+    if (start && end && start < end)
     {
-        names |= 2;
-        if(strstr(idx, "name=\"ADDsynth_used\" value=\"yes\""))
-            information.ADDsynth_used = 1;
+        // Andrew: just make it simple
+        // Will: but not too simple :)
+        //idx = start;
+
+
+        /*
+         * the following could be in any order. We are checking for
+        * the actual existence of the fields as well as their value.
+        */
+        idx = strstr(start, "name=\"ADDsynth_used\"");
+        if (idx != NULL)
+        {
+            seen |= 2;
+            if(strstr(idx, "name=\"ADDsynth_used\" value=\"yes\""))
+                information.ADDsynth_used = 1;
+        }
+
+        idx = strstr(start, "name=\"SUBsynth_used\"");
+        if (idx != NULL)
+        {
+            seen |= 4;
+            if(strstr(idx, "name=\"SUBsynth_used\" value=\"yes\""))
+                information.SUBsynth_used = 1;
+        }
+
+        idx = strstr(start, "name=\"PADsynth_used\"");
+        if (idx != NULL)
+        {
+            seen |= 1;
+            if(strstr(idx, "name=\"PADsynth_used\" value=\"yes\""))
+                information.PADsynth_used = 1;
+        }
     }
 
-    idx = strstr(start, "name=\"SUBsynth_used\"");
+    idx = strstr(xmldata, "<INFO>");
+    if (idx == NULL)
+        return;
+    idx = strstr(idx, "par name=\"type\" value=\"");
     if (idx != NULL)
-    {
-        names |= 4;
-        if(strstr(idx, "name=\"SUBsynth_used\" value=\"yes\""))
-            information.SUBsynth_used = 1;
-    }
+        type = string2int(idx + 23);
 
-    idx = strstr(start, "name=\"PADsynth_used\"");
-    if (idx != NULL)
-    {
-        names |= 1;
-        if(strstr(idx, "name=\"PADsynth_used\" value=\"yes\""))
-            information.PADsynth_used = 1;
-    }
-
-    if (names != 7)
+    if (seen != 7) // at least one was missing
         slowinfosearch(xmldata);
-
     delete [] xmldata;
+    names = information.ADDsynth_used | (information.SUBsynth_used << 1) | (information.PADsynth_used << 2) | (information.yoshiType << 3);
     return;
 }
 
@@ -316,49 +344,45 @@ char *XMLwrapper::getXMLdata()
 
     switch (synth->getRuntime().xmlType)
     {
-        case 0:
-            addparstr("XMLtype", "Invalid");
+        case TOPLEVEL::XML::Instrument:
+            addparbool("ADDsynth_used", (information.ADDsynth_used != 0));
+            addparbool("SUBsynth_used", (information.SUBsynth_used != 0));
+            addparbool("PADsynth_used", (information.PADsynth_used != 0));
             break;
 
-        case XML_INSTRUMENT:
-            addparbool("ADDsynth_used", information.ADDsynth_used);
-            addparbool("SUBsynth_used", information.SUBsynth_used);
-            addparbool("PADsynth_used", information.PADsynth_used);
-            break;
-
-        case XML_PARAMETERS:
+        case TOPLEVEL::XML::Patch:
             addparstr("XMLtype", "Parameters");
             break;
 
-        case XML_MICROTONAL:
+        case TOPLEVEL::XML::Scale:
             addparstr("XMLtype", "Scales");
             break;
 
-        case XML_STATE:
+        case TOPLEVEL::XML::State:
             addparstr("XMLtype", "Session");
             break;
 
-        case XML_VECTOR:
+        case TOPLEVEL::XML::Vector:
             addparstr("XMLtype", "Vector Control");
             break;
 
-        case XML_MIDILEARN:
+        case TOPLEVEL::XML::MLearn:
             addparstr("XMLtype", "Midi Learn");
             break;
 
-        case XML_CONFIG:
+        case TOPLEVEL::XML::Config:
             addparstr("XMLtype", "Config");
             break;
 
-        case XML_PRESETS:
+        case TOPLEVEL::XML::Presets:
             addparstr("XMLtype", "Presets");
             break;
 
-        case XML_BANK:
+        case TOPLEVEL::XML::Bank:
             addparstr("XMLtype", "Roots and Banks");
             break;
 
-        case XML_HISTORY:
+        case TOPLEVEL::XML::History:
             addparstr("XMLtype", "Recent Files");
             break;
 
@@ -436,7 +460,6 @@ void XMLwrapper::endbranch()
     node = pop();
 }
 
-
 // LOAD XML members
 bool XMLwrapper::loadXMLfile(const std::string& filename)
 {
@@ -457,7 +480,7 @@ bool XMLwrapper::loadXMLfile(const std::string& filename)
         synth->getRuntime().Log("XML: Could not load xml file: " + filename, 2);
          return false;
     }
-    root = tree = mxmlLoadString(NULL, xmldata, MXML_OPAQUE_CALLBACK);
+    root = tree = mxmlLoadString(NULL, removeBlanks(xmldata), MXML_OPAQUE_CALLBACK);
     delete [] xmldata;
     if (!tree)
     {

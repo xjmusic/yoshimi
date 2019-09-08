@@ -4,7 +4,7 @@
     Original ZynAddSubFX author Nasca Octavian Paul
     Copyright (C) 2002-2005 Nasca Octavian Paul
     Copyright 2009-2011, Alan Calvert
-    Copyright 2018, Will Godfrey
+    Copyright 2019, Will Godfrey
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -22,7 +22,7 @@
 
     This file is derivative of ZynAddSubFX original code.
 
-    Modified August 2018
+    Modified May 2019
 */
 
 #include <cmath>
@@ -41,7 +41,7 @@ EnvelopeParams::EnvelopeParams(unsigned char Penvstretch_,
     Penvstretch(Penvstretch_),
     Pforcedrelease(Pforcedrelease_),
     Plinearenvelope(0),
-    Envmode(1)
+    Envmode(ENVMODE::amplitudeLin)
 {
     int i;
 
@@ -74,7 +74,7 @@ float EnvelopeParams::getdt(char i)
 void EnvelopeParams::ADSRinit(char A_dt, char D_dt, char S_val, char R_dt)
 {
     setpresettype("Penvamplitude");
-    Envmode = 1;
+    Envmode = ENVMODE::amplitudeLin;
     PA_dt = A_dt;
     PD_dt = D_dt;
     PS_val = S_val;
@@ -88,7 +88,7 @@ void EnvelopeParams::ADSRinit(char A_dt, char D_dt, char S_val, char R_dt)
 void EnvelopeParams::ADSRinit_dB(char A_dt, char D_dt, char S_val, char R_dt)
 {
     setpresettype("Penvamplitude");
-    Envmode = 2;
+    Envmode = ENVMODE::amplitudeLog;
     PA_dt = A_dt;
     PD_dt = D_dt;
     PS_val = S_val;
@@ -102,7 +102,7 @@ void EnvelopeParams::ADSRinit_dB(char A_dt, char D_dt, char S_val, char R_dt)
 void EnvelopeParams::ASRinit(char A_val, char A_dt, char R_val, char R_dt)
 {
     setpresettype("Penvfrequency");
-    Envmode = 3;
+    Envmode = ENVMODE::frequency;
     PA_val = A_val;
     PA_dt = A_dt;
     PR_val = R_val;
@@ -116,7 +116,7 @@ void EnvelopeParams::ASRinit(char A_val, char A_dt, char R_val, char R_dt)
 void EnvelopeParams::ADSRinit_filter(char A_val, char A_dt, char D_val, char D_dt, char R_dt, char R_val)
 {
     setpresettype("Penvfilter");
-    Envmode = 4;
+    Envmode = ENVMODE::filter;
     PA_val = A_val;
     PA_dt = A_dt;
     PD_val = D_val;
@@ -132,7 +132,7 @@ void EnvelopeParams::ADSRinit_filter(char A_val, char A_dt, char D_val, char D_d
 void EnvelopeParams::ASRinit_bw(char A_val, char A_dt, char R_val, char R_dt)
 {
     setpresettype("Penvbandwidth");
-    Envmode = 5;
+    Envmode = ENVMODE::bandwidth;
     PA_val = A_val;
     PA_dt = A_dt;
     PR_val = R_val;
@@ -148,7 +148,7 @@ void EnvelopeParams::converttofree(void)
 {
     switch (Envmode)
     {
-    case 1:
+        case ENVMODE::amplitudeLin:
         Penvpoints = 4;
         Penvsustain = 2;
         Penvval[0] = 0;
@@ -160,7 +160,7 @@ void EnvelopeParams::converttofree(void)
         Penvval[3] = 0;
         break;
 
-    case 2:
+    case ENVMODE::amplitudeLog:
         Penvpoints = 4;
         Penvsustain = 2;
         Penvval[0] = 0;
@@ -172,7 +172,7 @@ void EnvelopeParams::converttofree(void)
         Penvval[3] = 0;
         break;
 
-    case 3:
+    case ENVMODE::frequency:
         Penvpoints = 3;
         Penvsustain = 1;
         Penvval[0] = PA_val;
@@ -182,7 +182,7 @@ void EnvelopeParams::converttofree(void)
         Penvval[2] = PR_val;
         break;
 
-    case 4:
+    case ENVMODE::filter:
         Penvpoints = 4;
         Penvsustain = 2;
         Penvval[0] = PA_val;
@@ -194,7 +194,7 @@ void EnvelopeParams::converttofree(void)
         Penvval[3] = PR_val;
         break;
 
-    case 5:
+    case ENVMODE::bandwidth:
         Penvpoints = 3;
         Penvsustain = 1;
         Penvval[0] = PA_val;
@@ -299,9 +299,8 @@ void EnvelopeParams::store2defaults(void)
 
 float envelopeLimit::getEnvelopeLimits(CommandBlock *getData)
 {
-    float value = getData->data.value;
-    unsigned char type = getData->data.type;
-    int request = type & TOPLEVEL::type::Default;
+    float value = getData->data.value.F;
+    int request = int(getData->data.type & TOPLEVEL::type::Default);
     int control = getData->data.control;
     int engine = getData->data.engine;
     if (engine >= PART::engine::addMod1 && engine <= PART::engine::addMod8)
@@ -310,7 +309,7 @@ float envelopeLimit::getEnvelopeLimits(CommandBlock *getData)
         engine = PART::engine::addVoice1;
     int parameter = getData->data.parameter;
 
-    type &= (TOPLEVEL::source::MIDI | TOPLEVEL::source::CLI | TOPLEVEL::source::GUI); // source bits only
+    unsigned char type = 0;
 
     // envelope defaults
     int min = 0;

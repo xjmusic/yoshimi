@@ -21,25 +21,25 @@
     Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
     This file is a derivative of a ZynAddSubFX original
-
-    Modified February 2019
 */
 
 #ifndef PRESETSSTORE_H
 #define PRESETSSTORE_H
 
 #include "Misc/Config.h"
-#include "Misc/MiscFuncs.h"
-#include "Interface/FileMgr.h"
+
+#include <string>
+
+using std::string;
 
 #define MAX_PRESETTYPE_SIZE 30
 
 class XMLwrapper;
 class PresetsStore;
-
 class SynthEngine;
 
-class PresetsStore : MiscFuncs, FileMgr
+
+class PresetsStore
 {
     public:
         PresetsStore(SynthEngine *_synth);
@@ -61,7 +61,7 @@ class PresetsStore : MiscFuncs, FileMgr
         };
         presetstruct presets[MAX_PRESETS];
 
-        void rescanforpresets(string type);
+        void rescanforpresets(string type, int root);
 
     private:
         void clearpresets(void);

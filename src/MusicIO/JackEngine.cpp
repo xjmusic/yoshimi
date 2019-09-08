@@ -21,16 +21,18 @@
 */
 
 #include <errno.h>
-#include <unistd.h>
+
 #include <jack/midiport.h>
 #include <jack/thread.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sstream>
-#include <stdio.h>
+#include <unistd.h>     // for usleep()
 
 #include "Misc/Config.h"
+#include "Misc/FormatFuncs.h"
 #include "MusicIO/JackEngine.h"
+
+using func::asString;
+using func::asHexString;
+
 
 JackEngine::JackEngine(SynthEngine *_synth) : MusicIO(_synth), jackClient(NULL)
 {
@@ -88,7 +90,7 @@ bool JackEngine::openJackClient(std::string server)
         snprintf(sUniqueId, sizeof(sUniqueId), "%d", synthUniqueId);
         clientname += ("-" + std::string(sUniqueId));
     }
-
+    //std::cout << " C name " << clientname << std::endl;
     bool named_server = server.size() > 0 && server.compare("default") != 0;
     if (named_server)
         jopts |= JackServerName;
@@ -124,7 +126,7 @@ bool JackEngine::openJackClient(std::string server)
     if (jackClient)
         return true;
     else
-        synth->getRuntime().Log("Failed jack_client_open(), status: " + synth->getRuntime().asHexString((int)jstatus), 1);
+        synth->getRuntime().Log("Failed jack_client_open(), status: " + asHexString((int)jstatus), 1);
     return false;
 }
 
@@ -474,7 +476,10 @@ bool JackEngine::processMidi(jack_nframes_t nframes)
         if(!jack_midi_event_get(&jEvent, portBuf, idx))
         {
             if (jEvent.size >= 1 && jEvent.size <= 4) // no interest in zero sized or long events
+            {
+                //std::cout << "Offset " << int(jEvent.time) << std::endl;
                 setMidi(jEvent.buffer[0], jEvent.buffer[1], jEvent.buffer[2]);
+            }
         }
     }
     return true;

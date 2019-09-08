@@ -4,7 +4,7 @@
     Original ZynAddSubFX author Nasca Octavian Paul
     Copyright (C) 2002-2005 Nasca Octavian Paul
     Copyright 2009-2010, Alan Calvert
-    Copyright 2017 Will Godfrey
+    Copyright 2017-2019 Will Godfrey
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -21,20 +21,23 @@
     Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
     This file is a derivative of a ZynAddSubFX original.
-
-    Modified September 2017
 */
 
 #include <dirent.h>
-#include <sys/stat.h>
-#include <cstdlib>
-#include <cstring>
+//#include <iostream>
 
 #include "Misc/XMLwrapper.h"
 #include "Params/PresetsStore.h"
+#include "Misc/FileMgrFuncs.h"
 #include "Misc/SynthEngine.h"
 
+using file::make_legit_filename;
+
+
+extern SynthEngine *firstSynth;
+
 PresetsStore::_clipboard PresetsStore::clipboard;
+
 
 PresetsStore::PresetsStore(SynthEngine *_synth) :
     preset_extension(".xpz"),
@@ -82,8 +85,11 @@ bool PresetsStore::pasteclipboard(XMLwrapper *xml)
     if (clipboard.data != NULL)
     {
         xml->putXMLdata(clipboard.data);
+        if (synth->getRuntime().effectChange != UNUSED)
+            synth->getRuntime().effectChange |= 0xff0000; // temporary fix
         return true;
     }
+    synth->getRuntime().effectChange = UNUSED; // temporary fix
     return false;
 }
 
@@ -108,7 +114,7 @@ void PresetsStore::clearpresets(void)
 }
 
 
-void PresetsStore::rescanforpresets(string type)
+void PresetsStore::rescanforpresets(string type, int root)
 {
     for (int i = 0; i < MAX_PRESETS; ++i)
     {
@@ -118,31 +124,50 @@ void PresetsStore::rescanforpresets(string type)
     int presetk = 0;
     string ftype = "." + type + preset_extension;
 
-    for (int i = 0; i < MAX_PRESETS; ++i)
+    //std::cout << "type " << type << std::endl;
+    string altType = "";
+    if (type == "Padsyth")
+        altType = ".ADnoteParameters" + preset_extension;
+    else if (type == "Padsythn")
+        altType = ".ADnoteParametersn" + preset_extension;
+    else if (type == "Psubsyth")
+        altType = ".SUBnoteParameters" + preset_extension;
+    else if (type == "Ppadsyth")
+        altType = ".PADnoteParameters" + preset_extension;
+    string dirname = firstSynth->getRuntime().presetsDirlist[root];
+    if (dirname.empty())
+        return;
+    //std::cout << "Preset root " << dirname << std::endl;
+    DIR *dir = opendir(dirname.c_str());
+    if (dir == NULL)
+        return;
+
+    struct dirent *fn;
+    while ((fn = readdir(dir)))
     {
-        if (synth->getRuntime().presetsDirlist[i].empty())
-            continue;
-        string dirname = synth->getRuntime().presetsDirlist[i];
-        DIR *dir = opendir(dirname.c_str());
-        if (dir == NULL)
-            continue;
-        struct dirent *fn;
-        while ((fn = readdir(dir)))
+        string filename = string(fn->d_name);
+        //std::cout << "file " << filename << std::endl;
+        if (filename.find(ftype) == string::npos)
         {
-            string filename = string(fn->d_name);
-            if (filename.find(ftype) == string::npos)
+            if (altType.empty() || filename.find(altType) == string::npos)
                 continue;
-            if (dirname.at(dirname.size() - 1) != '/')
-                dirname += "/";
-            presets[presetk].file = dirname + filename;
-            presets[presetk].name =
-                filename.substr(0, filename.find(ftype));
-            presetk++;
-            if (presetk >= MAX_PRESETS)
-                return;
         }
-        closedir(dir);
+        if (dirname.at(dirname.size() - 1) != '/')
+            dirname += "/";
+        presets[presetk].file = dirname + filename;
+
+        size_t endpos = filename.find(ftype);
+        if (endpos == string::npos)
+            if (!altType.empty())
+                endpos = filename.find(altType);
+        presets[presetk].name = filename.substr(0, endpos);
+//        std::cout << "Preset name " << presets[presetk].name << std::endl;
+        presetk++;
+        if (presetk >= MAX_PRESETS)
+            return;
     }
+    closedir(dir);
+
     // sort the presets
     bool check = true;
     while (check)
@@ -168,13 +193,13 @@ void PresetsStore::rescanforpresets(string type)
 
 void PresetsStore::copypreset(XMLwrapper *xml, string type, string name)
 {
-    if (synth->getRuntime().presetsDirlist[0].empty())
+    if (firstSynth->getRuntime().presetsDirlist[0].empty())
         return;
-    synth->getRuntime().xmlType = XML_PRESETS;
+    synth->getRuntime().xmlType = TOPLEVEL::XML::Presets;
     synth->getRuntime().Log(name);
     string tmpfilename = name;
-    legit_filename(tmpfilename);
-    string dirname = synth->getRuntime().presetsDirlist[0];
+    make_legit_filename(tmpfilename);
+    string dirname = firstSynth->getRuntime().presetsDirlist[synth->getRuntime().currentPreset];
     if (dirname.find_last_of("/") != (dirname.size() - 1))
         dirname += "/";
     xml->saveXMLfile(dirname + tmpfilename + "." + type + preset_extension);
@@ -188,6 +213,8 @@ bool PresetsStore::pastepreset(XMLwrapper *xml, int npreset)
     npreset--;
     if (presets[npreset].file.empty())
         return false;
+    if (synth->getRuntime().effectChange != UNUSED)
+        synth->getRuntime().effectChange |= 0xff0000; // temporary fix
     return xml->loadXMLfile(presets[npreset].file);
 }
 

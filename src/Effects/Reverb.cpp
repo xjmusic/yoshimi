@@ -22,7 +22,6 @@
 
     This file is derivative of ZynAddSubFX original code.
 
-    Modified April 2019
 */
 
 #include <cmath>
@@ -456,15 +455,10 @@ void Reverb::settype(unsigned char Ptype_)
         bandwidth = new Unison(synth->buffersize / 4 + 1, 2.0f, synth);
         bandwidth->setSize(50);
         bandwidth->setBaseFrequency(1.0f);
-        /* This block is kept as it's a bit of Cal's humour :)
-         *
-#warning sa schimb size-ul
-        //the size of the unison buffer may be too small, though this has
+        //TODO the size of the unison buffer may be too small, though this has
         //not been verified yet.
         //As this cannot be resized in a RT context, a good upper bound should
         //be found
-        *
-        */
     }
     settime(Ptime);
     cleanup();
@@ -599,7 +593,7 @@ unsigned char Reverb::getpar(int npar)
 
 float Revlimit::getlimits(CommandBlock *getData)
 {
-    int value = getData->data.value;
+    int value = getData->data.value.F;
     int control = getData->data.control;
     int request = getData->data.type & 3; // clear upper bits
     int npart = getData->data.part;
@@ -608,8 +602,8 @@ float Revlimit::getlimits(CommandBlock *getData)
     int max = 127;
 
     int def = presets[presetNum][control];
-    bool canLearn = true;
-    bool isInteger = true;
+    unsigned char canLearn = TOPLEVEL::type::Learnable;
+    unsigned char isInteger = TOPLEVEL::type::Integer;
 
     switch (control)
     {
@@ -634,16 +628,16 @@ float Revlimit::getlimits(CommandBlock *getData)
             break;
         case 10:
             max = 2;
-            canLearn = false;
+            canLearn = 0;
             break;
         case 11:
-            canLearn = false;
+            canLearn = 0;
             break;
         case 12:
             break;
         case 16:
             max = 12;
-            canLearn = false;
+            canLearn = 0;
             break;
         default:
             getData->data.type |= TOPLEVEL::type::Error;
@@ -669,6 +663,6 @@ float Revlimit::getlimits(CommandBlock *getData)
             value = def;
             break;
     }
-    getData->data.type |= (canLearn * 64 + isInteger * 128);
+    getData->data.type |= (canLearn + isInteger);
     return float(value);
 }

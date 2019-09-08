@@ -19,10 +19,13 @@
     yoshimi; if not, write to the Free Software Foundation, Inc., 51 Franklin
     Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-    This file is a derivative of the ZynAddSubFX original, modified March 2017
+    This file is a derivative of the ZynAddSubFX original
+
 */
 
 #include "WidgetMWSlider.h"
+
+#include <cmath>
 
 /*
   Fl_Value_Slider supplying additional mousewheel control with variable precision.
@@ -110,7 +113,7 @@ int mwheel_val_slider::_handle(int res, int event)
         {
             return 1;
         }
-        double range = abs(maximum() - minimum());
+        double range = std::abs(maximum() - minimum());
         int step_size = (reverse * Fl::event_dy() > 0) ? 1 : -1;
 
         if(Fl::event_state(FL_CTRL) != 0)

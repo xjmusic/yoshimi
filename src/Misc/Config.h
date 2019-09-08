@@ -21,8 +21,6 @@
     Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
     This file is derivative of ZynAddSubFX original code.
-
-    Modified May 2019
 */
 
 #ifndef CONFIG_H
@@ -33,18 +31,15 @@
 #include <deque>
 #include <list>
 
-using namespace std;
-
 #include "MusicIO/MusicClient.h"
-#include "Misc/MiscFuncs.h"
-#include "Interface/FileMgr.h"
 #include "FL/Fl.H"
 
-class XMLwrapper;
+using std::string;
 
+class XMLwrapper;
 class SynthEngine;
 
-class Config : public MiscFuncs, FileMgr
+class Config
 {
     public:
         Config(SynthEngine *_synth, int argc, char **argv);
@@ -133,8 +128,10 @@ class Config : public MiscFuncs, FileMgr
         bool          loadDefaultState;
         int           Interpolation;
         string        presetsDirlist[MAX_PRESETS];
-        list<string>  lastfileseen;
-        int           checksynthengines;
+        std::list<string> lastfileseen;
+        bool          sessionSeen[TOPLEVEL::XML::MLearn + 1];
+        bool          historyLock[TOPLEVEL::XML::MLearn + 1];
+        bool          checksynthengines;
         int           xmlType;
         unsigned char instrumentFormat;
         int           EnableProgChange;
@@ -158,6 +155,7 @@ class Config : public MiscFuncs, FileMgr
         int           currentPart;
         unsigned int  currentBank;
         unsigned int  currentRoot;
+        int           currentPreset;
         int           tempBank;
         int           tempRoot;
         int           noteOnSent; // note test
@@ -173,6 +171,7 @@ class Config : public MiscFuncs, FileMgr
         unsigned char dataL;
         unsigned char dataH;
         bool          nrpnActive;
+        int           effectChange; // temporary fix
 
         struct{
             unsigned char Xaxis[NUM_MIDI_CHANNELS];
@@ -191,7 +190,7 @@ class Config : public MiscFuncs, FileMgr
             bool Enabled[NUM_MIDI_CHANNELS];
         }vectordata;
 
-        list<string> LogList;
+        std::list<string> LogList;
 
         /*
          * These replace local memory allocations that

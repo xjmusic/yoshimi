@@ -17,8 +17,6 @@
 #   You should have received a copy of the GNU General Public License
 #   along with yoshimi.  If not, see <http://www.gnu.org/licenses/>.
 
-# Modified May 2019
-
 project (Yoshimi)
 cmake_minimum_required (VERSION 3.0)
 cmake_policy (VERSION 3.0)
@@ -37,15 +35,15 @@ add_definitions(-Wall)
 # vvv
 #add_definitions(-Wpedantic) # full ISO spec
 #add_definitions(-Werror) # warnings as errors
-add_definitions(-Wfatal-errors) # stop on first
-add_definitions(-Werror=format-security)
-add_definitions(-Wextra)
+#add_definitions(-Wfatal-errors) # stop on first
+#add_definitions(-Werror=format-security)
+#add_definitions(-Wextra)
+#add_definitions(-Wno-vla) # Nothing wrong with variable length arrays
 # ^^^ comment these out on release pushes
 
-set (YOSHIMI_VERSION "1.5.11.4")
-
+set (YOSHIMI_VERSION "1.6.0.1")
 add_definitions (-DMIN_CONFIG_MAJOR=1)
-add_definitions (-DMIN_CONFIG_MINOR=5)
+add_definitions (-DMIN_CONFIG_MINOR=6)
 
 file (WRITE version.txt "${YOSHIMI_VERSION}")
 
@@ -95,7 +93,6 @@ option (BuildWithFLTK "Build with FLTK GUI" ON)
 option (LV2Plugin "Build yoshimi lv2 plugin interface" ON)
 
 # developer info
-option (ShowGuiReports "Enable GUI control reports" OFF)
 option (ShowNoteOnTimes "Report Note-On Times" OFF)
 option (ReportNotes "Report Notes On/Off" OFF)
 
@@ -362,16 +359,22 @@ set (Effects_sources
 
 set (Misc_sources
     Misc/Config.cpp  Misc/SynthEngine.cpp  Misc/Bank.cpp  Misc/Splash.cpp
-    Misc/Microtonal.cpp   Misc/Part.cpp  Misc/XMLwrapper.cpp  Misc/MiscFuncs.cpp   Misc/WavFile.cpp
+    Misc/Microtonal.cpp   Misc/Part.cpp  Misc/XMLwrapper.cpp  Misc/WavFile.cpp
 )
 
 set (Interface_Sources
-    Interface/CmdInterface.cpp
     Interface/InterChange.cpp
+    Interface/Data2Text.cpp
     Interface/MidiLearn.cpp
     Interface/MidiDecode.cpp
-    Interface/FileMgr.cpp
     Interface/RingBuffer.cpp
+    Interface/TextLists.h
+)
+
+set (CLI_Sources
+    CLI/CmdInterface.cpp
+    #CLI/ConfigCLI.cpp
+    CLI/CmdInterpreter.cpp
 )
 
 set (Params_sources
@@ -440,10 +443,6 @@ add_definitions (
 
 add_definitions (-DYOSHIMI="yoshimi")
 
-if (ShowGuiReports)
-    add_definitions (-DENABLE_REPORTS)
-endif (ShowGuiReports)
-
 if (ShowNoteOnTimes)
     add_definitions (-DREPORT_NOTEON)
 endif (ShowNoteOnTimes)
@@ -481,6 +480,7 @@ endif (HasJackLatency)
 
 set (ProgSources
     ${Interface_Sources}
+    ${CLI_Sources}
     ${Misc_sources}
     ${Params_sources}
     ${Synth_sources}
@@ -513,7 +513,6 @@ set(ExternLibraries
     ${CURSES_LIBRARIES}
     ${Readline_LIBRARY}
     z
-    #dl
     ${LIBDL_LINUX}
 )
 

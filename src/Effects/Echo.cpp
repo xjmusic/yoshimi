@@ -22,7 +22,6 @@
 
     This file is derivative of ZynAddSubFX original code.
 
-    Modified March 2019
 */
 
 #include "Misc/SynthEngine.h"
@@ -282,7 +281,7 @@ unsigned char Echo::getpar(int npar)
 
 float Echolimit::getlimits(CommandBlock *getData)
 {
-    int value = getData->data.value;
+    int value = getData->data.value.F;
     int control = getData->data.control;
     int request = getData->data.type & 3; // clear upper bits
     int npart = getData->data.part;
@@ -291,8 +290,8 @@ float Echolimit::getlimits(CommandBlock *getData)
     int max = 127;
 
     int def = presets[presetNum][control];
-    bool canLearn = true;
-    bool isInteger = true;
+    unsigned char canLearn = TOPLEVEL::type::Learnable;
+    unsigned char isInteger = TOPLEVEL::type::Integer;
     switch (control)
     {
         case 0:
@@ -313,7 +312,7 @@ float Echolimit::getlimits(CommandBlock *getData)
             break;
         case 16:
             max = 8;
-            canLearn = false;
+            canLearn = 0;
             break;
         default:
             getData->data.type |= TOPLEVEL::type::Error;
@@ -339,6 +338,6 @@ float Echolimit::getlimits(CommandBlock *getData)
             value = def;
             break;
     }
-    getData->data.type |= (canLearn * 64 + isInteger * 128);
+    getData->data.type |= (canLearn + isInteger);
     return float(value);
 }

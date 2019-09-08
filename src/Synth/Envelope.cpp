@@ -22,9 +22,14 @@
     This file is a derivative of a ZynAddSubFX original, modified January 2011
 */
 
-#include "Misc/SynthEngine.h"
-#include "Params/EnvelopeParams.h"
 #include "Synth/Envelope.h"
+#include "Misc/SynthEngine.h"
+#include "Misc/NumericFuncs.h"
+#include "Params/EnvelopeParams.h"
+
+using func::dB2rap;
+using func::rap2dB;
+
 
 Envelope::Envelope(EnvelopeParams *envpars, float basefreq, SynthEngine *_synth):
     synth(_synth)
@@ -45,10 +50,10 @@ Envelope::Envelope(EnvelopeParams *envpars, float basefreq, SynthEngine *_synth)
     int mode = envpars->Envmode;
 
     // for amplitude envelopes
-    if (mode == 1 && linearenvelope == 0)
-        mode = 2; // change to log envelope
-    if (mode == 2 && linearenvelope != 0)
-        mode = 1; // change to linear
+    if (mode == ENVMODE::amplitudeLin && linearenvelope == 0)
+        mode = ENVMODE::amplitudeLog; // change to log envelope
+    if (mode == ENVMODE::amplitudeLog && linearenvelope != 0)
+        mode = ENVMODE::amplitudeLin; // change to linear
 
     for (int i = 0; i < MAX_ENVELOPE_POINTS; ++i)
     {

@@ -22,20 +22,27 @@
 
     This file is a derivative of a ZynAddSubFX original.
 
-    Modified March 2019
 */
 
 #include "Misc/SynthEngine.h"
-#include "Misc/MiscFuncs.h"
 #include "Effects/Phaser.h"
+#include "Misc/NumericFuncs.h"
+
+#include <algorithm>
+
+
+using func::limit;
+using func::invSignal;
+
 
 #define PHASER_LFO_SHAPE 2
 #define ONE_  0.99999f        // To prevent LFO ever reaching 1.0f for filter stability purposes
 #define ZERO_ 0.00001f        // Same idea as above.
 
-static const int PRESET_SIZE = 15;
-static const int NUM_PRESETS = 12;
-static unsigned char presets[NUM_PRESETS][PRESET_SIZE] = {
+namespace {
+    const int PRESET_SIZE = 15;
+    const int NUM_PRESETS = 12;
+    unsigned char presets[NUM_PRESETS][PRESET_SIZE] = {
         // Phaser
         // 0   1    2    3  4   5     6   7   8    9 10   11 12  13 14
         {64, 64, 36,  0,   0, 64,  110, 64,  1,  0,   0, 20, 0, 0,  0 },
@@ -52,7 +59,9 @@ static unsigned char presets[NUM_PRESETS][PRESET_SIZE] = {
         {64, 64, 14,  10,  0, 64,  45,  80,  7,  10,  1, 110,1,  20, 1 },
         {25, 64, 127, 10,  0, 64,  25,  16,  8,  100, 0, 25, 0,  20, 1 },
         {64, 64, 1,   10,  1, 64,  70,  40,  12, 10,  0, 110,1,  20, 1 }
-};
+    };
+}
+
 
 Phaser::Phaser(bool insertion_, float *efxoutl_, float *efxoutr_, SynthEngine *_synth) :
     Effect(insertion_, efxoutl_, efxoutr_, NULL, 0),
@@ -149,7 +158,7 @@ void Phaser::AnalogPhase(float *smpsl, float *smpsr)
 
     if(Phyper)
     {
-        // Triangle wave squared is approximately sin on bottom, tri on top
+        // Triangle wave squared is approximately sine on bottom, triangle on top
         // Result is exponential sweep more akin to filter in synth with
         // exponential generator circuitry.
         modl *= modl;
@@ -470,7 +479,7 @@ void Phaser::changepar(int npar, unsigned char value)
             break;
 
         case 12:
-            Phyper = min((int)value, 1);
+            Phyper = std::min(int(value), 1);
             break;
 
         case 13:
@@ -515,7 +524,7 @@ unsigned char Phaser::getpar(int npar)
 
 float Phaserlimit::getlimits(CommandBlock *getData)
 {
-    int value = getData->data.value;
+    int value = getData->data.value.F;
     int control = getData->data.control;
     int request = getData->data.type & 3; // clear upper bits
     int presetNum = getData->data.engine;
@@ -523,8 +532,8 @@ float Phaserlimit::getlimits(CommandBlock *getData)
     int max = 127;
 
     int def = presets[presetNum][control];
-    bool canLearn = true;
-    bool isInteger = true;
+    unsigned char canLearn = TOPLEVEL::type::Learnable;
+    unsigned char isInteger = TOPLEVEL::type::Integer;
     switch (control)
     {
         case 0:
@@ -537,7 +546,7 @@ float Phaserlimit::getlimits(CommandBlock *getData)
             break;
         case 4:
             max = 1;
-            canLearn = false;
+            canLearn = 0;
             break;
         case 5:
             break;
@@ -548,29 +557,29 @@ float Phaserlimit::getlimits(CommandBlock *getData)
         case 8:
             min = 1;
             max = 12;
-            canLearn = false;
+            canLearn = 0;
             break;
         case 9:
             break;
         case 10:
-            canLearn = false;
+            canLearn = 0;
             max = 1;
             break;
         case 11:
             break;
         case 12:
-            canLearn = false;
+            canLearn = 0;
             max = 1;
             break;
         case 13:
             break;
         case 14:
             max = 1;
-            canLearn = false;
+            canLearn = 0;
             break;
         case 16:
             max = 11;
-            canLearn = false;
+            canLearn = 0;
             break;
         default:
             getData->data.type |= TOPLEVEL::type::Error;
@@ -596,7 +605,7 @@ float Phaserlimit::getlimits(CommandBlock *getData)
             value = def;
             break;
     }
-    getData->data.type |= (canLearn * 64 + isInteger * 128);
+    getData->data.type |= (canLearn + isInteger);
     return float(value);
 }
 

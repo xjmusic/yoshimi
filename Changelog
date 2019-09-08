@@ -1,9 +1,394 @@
-yoshimi 1.5.11.4
+yoshimi 1.6.0 M
+
+2019-9-8 Will
+* BugFix: Loading files failed with mxml V 3.1 :(
+* Set version as 1.6.0.1
+
+2019-9-7 Will
+* CLI can now set instrument type.
+* Removed outdated 'Yoshimi Control Numbers.txt'
+* Updated 'Yoshimi Control Numbers.ods'
+
+2019-9-6 Will
+* A corrupted config file no longer aborts.
+  A message is given stating defaults are used.
+
+2019-9-1 Will
+* Final doc updates.
+* Set release version as 1.6.0
+* Merged in bugfix for BSD.
+
+2019-8-30 Will
+* Small GUI correction for AddSynth.
+* Manual Updates.
+* Set version as 1.6.0 rc5
+
+2019-8-24 Will
+* Doc updates.
+* Minor correction to CLI test list.
+
+2019-8-24 Will
+* BugFix: CLI effects out of sync with GUI (and actual)
+
+2019-8-23 Will
+* Fixed resonance regression (not recognising point 255)
+  Found by Jesper, caused by clash of numeric control
+  numbers. 'parameter' now used for point number.
+* Improved effects handling/reporting for CLI.
+* Set version as 1.6.0 rc3
+* BugFix: Crash when cancelling part >1 effect bypass.
+* Added missing CLI effect bypass control.
+* Set version as 1.6.0 rc4
+
+2019-8-22 Will
+* Fixed effects regression (not midi-learning)
+  Found by Jesper, and caused by the change from numeric a
+  value for the learn fag being changed to an enum with a
+  different value.
+* Identified midi-learn GUI message control number.
+* BugFix: CLI not setting resonance point 1.
+  Further resonance issues to resolve.
+* Set version as 1.6.0 rc2
+
+2019-8-19 Will
+* Added shortcut and ellipsis to GUI Instruments/Search entry.
+* Improved CLI instrument group comments.
+* Added error check for CLI bank/root CC selection.
+* Set version as 1.6.0 rc1
+  Yay :)
+* Set and updated manual version.
+* Updated docs and metadata.
+
+2019-8-18 Will
+* Implimented formal calls for instrument Engine/Type checks.
+* Implemented CLI access to instrument Engine/Type checks.
+* Updated docs.
+
+2019-8-17 Will
+* CLI osc and mod types show names not internal values.
+* Cleanups around CLI mod types.
+* Added missing merge reference to this file.
+* BugFix: segfault on CLI attempt to change modulator panning.
+  It doesn't exist!
+
+2019-8-16 Will
+* Merged extensive refactoring from Hermann into master.
+
+2019-8-15 Will
+* Doc updates
+* Updated Miscellany/Images
+
+2019-8-12 Will
+* Updated Miscellany/Images/PartEdit.png
+* Removed incorrect attribution in Effects/Reverb.cpp
+* Corrected wrong CLI reporting of voice oscillator.
+* Updated docs.
+
+2019-8-9 Will
+* Added Rainer to people list in GUI.
+* Updated dev_notes.
+
+2019-8-6 Will
+* Further refinements to ring buffer code.
+
+2019-8-4 Will
+* Reinstated Cormi_Sound bank.
+  This seems to have been lost at some point.
+* Revised specimen presets.
+* Updated user guide.
+
+2019-8-2 Will
+* Created new CLI directory.
+  Moved main command line files there
+  ready to split them up.
+* Moved buffered read and write from CmdInterface to MiscCLI.
+* Most utility functions moved from CmdInterface to MiscCLI.
+
+2019-8-1 Will
+* Adjusted new instrument group controls to Yoshi standard.
+* Implemented CLI access to group controls.
+* Moved static lists from CmdInterface.h to TextLists.h
+* Moved reply enums into dedicated namespace.
+
+2019-7-31 Will
+* Small bank refinements.
+* Bank search window first starts with Piano.
+* BugFix: Part not setting instrument labels.
+* Updated Miscellany/Images
+* Added protection against overlength lines in CLI.
+  Max size is set to 252 chars but longest Yoshim1 command
+  is less than 180.
+* Disabled bank search window if not showing engine types.
+* Added warning if no entries in bank search window.
+* Re-enabling system effects does a cleanup first.
+  this is so you don't get any stale data sounding.
+* Cleanup also done when clearing bypass.
+
+2019-7-30 Will
+* Applied work-round so paste updates GUI effects.
+* Small optimisation in mediate.
+* Implemented bank search by type.
+
+2019-7-29 Will
+* GUI offset added to collect_readData.
+* GUI offset added to collect_data.
+* GUI offset added to fetchData.
+* BugFix: Memory overrun in ring buffer.
+* Moved envelope 'X' from miscmsg to offset.
+* Updated docs.
+* Corrected date.
+* Moved formant vowel from miscmsg to offset.
+* Updated docs.
+
+2019-7-28 Will
+* Copy-paste cleanups.
+* Started separating miscmsg from other controls.
+* Renamed all GUI par2 labels as miscmsg.
+* Fixed regression CLI off by 1 history list loading.
+* All CLI changes complete.
+
+2019-7-27 Will
+* Moved (now common) preset lists to base parameters.
+* Considerably re-factored copy-paste.
+* Added preset error reports to GUI.
+* Enabled management of old and new preset types.
+
+2019-7-26 Will
+* Managing preset roots now use standard Yoshimi calls.
+  Not yet accessible to CLI.
+  Add root failure not yet reported to GUI.
+* Updated docs.
+
+2019-7-23 Will
+* Corrected preset store save - was wiping out others :(
+* Added placeholders for better preset directory controls.
+* Corrected date of last changelog entry!
+
+2019-7-22 Will
+* Preset directories now unified across instances.
+  Selectable without re-ordering but a lot of code
+  cleanup still needed.
+* Updated manual.
+
+2019-7-21 Will
+* Failed to actually add manual to commit :(
+* Preliminary ideas for preset roots.
+* Converted envelope type numbers to labels.
+
+2019-7-19 Will
+* Temporary install of provisional 1.6.0 manual
+  but named as 1.5.12
+
+2019-7-15 Will
+* Made more bank calls require root and bank.
+
+2019-7-14 Will
+ * Revised LV2 code Re. buffer sizes.
+ * Included corrected full explanation in code.
+ * Made more bank calls require root and bank.
+ * Further bank refinements and removed redundant code.
+ * Partially resolved LV2, Carla/Ardour now consistent.
+ * Updated /Miscellany/Images.
+
+2019-7-10 Will
+* Implimented formal calls to read current root and bank.
+* All instrument name bank calls now require root and bank.
+  current values no longer assumed.
+* Applied minor buffer size optimisation.
+  Size could have been needlessly greater than incoming.
+
+2019-7-9 Will
+* NRPN for load from history now includes MIDI learn.
+* Found more magic numbers to convert in Resonance.
+* Improved Resonance CLI responses.
+
+2019-7-8 Will
+* Resolved potential ambiguity in GUI switch switch exit.
+
+2019-7-1 Will
+* Implemented non-destructive system effect on/off.
+* Updated docs.
+* Some code cleanups.
+* Replaced more numbers with labels.
+* Added 0059 Rich Bass to Companion bank
+
+2019-6-27 Will
+* BugFix: GUI not exporting banks.
+  CLI was working fine.
+* Improved some bank error reports.
+* Made most filemanager methods static.
+  Used static calls instead of class in bank.
+* Most calls to bank now require implicit bank/root.
+
+2019-6-27 Will
+* Removed remaining bank message transfer conversions.
+
+2019-6-26 Will
+* Added in missing new files :(
+* Refinements to data->text conversions.
+  Specifically so that MIDI-learn text doesn't include
+  the current value or such as 'on/off' responses.
+* Removed some bank message transfer conversions.
+  These are now entirely within one low priority context
+  so there is no need to use miscMsg functions.
+* Added copyright notices to Data2Text files.
+
+2019-6-25 Will
+* Moved data->text conversions to new file 'Data2Text'.
+
+2019-6-24 Will
+* Swapped menu entry Yoshimi/MIDI Learn ~ button-Reports.
+* Improved MIDI-Learn internal links.
+* Partially separated text replies from respondents.
+* BugFix: voicelist enable calling MIDI_learn.
+
+2019-6-22 Will
+* Clarifed system mute controls.
+  Also added extra sanity checks.
+* Implemented new NRPN for load from history.
+  Not MLearn yet and Instruments only 16 parts.
+* Updated NRPN docs.
+* Improved history NRPNs.
+  Easier to use and greater flexibilty.
+* Updated docs (again!).
+
+2019-6-21 Will
+* Revised message handling in indirectTransfers(
+  More compact and easier to adjust.
+
+2019-6-20 Will
+* Implemented recent file history locking.
+  Currently CLI only.
+* Improved string list searches.
+* Completed locking including GUI controls.
+* Modified indirect controls for direct reads.
+* Updated docs.
+
+2019-6-18 Will
+* Extended 'CommandBlock'
+  Changed value to union of float F & int32_t I
+    i.e.
+    union{
+        float F;
+        int32_t I;
+    } value;
+
+2019-6-17 Will
+* BugFix: instances loading wrong default state on reset.
+* Refined FLTK locking in UI/MiscGui.cpp
+* Added recognition of files seen this session.
+  Currently only applied for enhanced Instrument save
+  protection but likely to be extended.
+
+2019-6-16 Will
+* Unified XML and history types.
+
+2019-6-10 Will
+* Corrected actual ringbuffer sizes.
+  It was still multipying by blocksize after previous
+  correction to size calculation.
+
+2019-6-4 Will
+* Completed CLI bank slot deletions.
+  Also integrated GUI controls.
+
+2019-6-3 Will
+* CLI can now delete bank slot instruments.
+  Notifications not complete yet.
+* Updated docs.
+
+2019-6-3 Will
+* Applied modulation patch from Kristian.
+* BugFix: Message list clearing was too agressive.
+  This prevented state loads from including mide-learn
+  control names.
+* BugFix: Load instrument by name failed for yoshi type.
+  Unless there was also a zyn type.
+
+2019-6-1 Will
+* Corrected ringbufer size calculation.
+
+2019-5-31 Will
+* Merged in bank and program improvements.
+  Separated out:
+  Load instrument by name
+  Load instrument from bank
+  Set current root or bank
+  Updated docs
+* Additional code and doc cleanups.
+
+2019-5-29 Will
+* BugFix: Several bad integer types for BSD
+* BugFix: CLI not seeing MIDI program changes.
+>>>>>>> master
 
 2019-5-27 Will
 * BugFix: Start message lockup only on Gnome or KDE
 * Fixed undefined integer type for BSD.
 * Set bugfix version as 1.5.11.4.
+
+2019-5-26 Will
+* BugFix: CLI load MIDI-learn list from history failed.
+* Moved some parameters out of par2.
+* Updated docs.
+
+2019-5-25 Will
+* Enabled part level sound cutoff instead of -40db.
+* Doc updates in dev_notes.
+
+2019-5-22 Will
+* BugFix: Midi CCs not updating GUI.
+
+2019-5-21 Will
+* Fixed regression not muting when loading patch sets.
+* Resolved spurious EQ setting message when loading.
+* Rearanged 'type' bits removing doubling up.
+  This also permitted streamlining of much of the code.
+* Remove or commented redundant test routines and info.
+
+2019-5-20 Will
+* GUI updates almost complete.
+* Corrected date of previous commit.
+* Fixed regression effects preset colour not changing.
+* Updates completed :)
+  'parameters' no longer doubles up for routing.
+
+  'type' no longer carries sources.
+  It currently has three spare bits but they will be
+  used to remove the doubling up of some functions.
+
+  'source' has up to 14 unique IDs + all and none.
+  It also now carries routing information and has
+  one spare bit.
+
+  The control block has three spare bytes.
+  One will be used for misc messages, separating
+  them from par2.
+  Another may be used as scratch space for private
+  controls applying only to specific sources.
+
+2019-5-19 Will
+* Some minor corrections to transferred controls.
+* Completed conversion for CLI.
+* Almost completed conversions for GUI.
+  Still to do UpdateAfterSet and returns detection
+  of gui source - fiddled for now.
+* Applied New Modulation patch from Kristian.
+  Corrects several mistakes.
+
+2019-5-18 Will
+* Low prio and Loopback transferred in Interchange.
+  Copied across in CLI and GUI.
+* MIDI, CLI, GUI transfered from type to source.
+
+2019-5-17 Will
+* Started transfering Low prio and Loopback
+  from control block parameter byte to source byte
+
+2019-5-16 Will
+* Added CLI access to extended modulator control.
+* Added CLI access to Spot noise.
+* Updated docs.
 
 2019-5-12 Will
 * Moved hidden filenames from globals to main.

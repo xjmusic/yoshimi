@@ -4,7 +4,7 @@
     Original ZynAddSubFX author Nasca Octavian Paul
     Copyright (C) 2002-2005 Nasca Octavian Paul
     Copyright 2009-2011, Alan Calvert
-    Copyright 2018, Will Godfrey
+    Copyright 2019, Will Godfrey
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -22,17 +22,16 @@
 
     This file is derivative of ZynAddSubFX original code.
 
-    Modified November 2018
+    Modified May 2019
 */
-
-#include <cmath>
-#include <iostream>
-
-using namespace std;
 
 #include "Misc/XMLwrapper.h"
 #include "Misc/SynthEngine.h"
+#include "Misc/NumericFuncs.h"
 #include "Params/FilterParams.h"
+
+using func::rap2dB;
+
 
 FilterParams::FilterParams(unsigned char Ptype_, unsigned char Pfreq_, unsigned  char Pq_, unsigned char Pfreqtrackoffset_, SynthEngine *_synth) :
     Presets(_synth),
@@ -392,14 +391,13 @@ void FilterParams::getfromXML(XMLwrapper *xml)
 
 float filterLimit::getFilterLimits(CommandBlock *getData)
 {
-    float value = getData->data.value;
-    unsigned char type = getData->data.type;
-    int request = type & TOPLEVEL::type::Default;
+    float value = getData->data.value.F;
+    int request = int(getData->data.type & TOPLEVEL::type::Default);
     int control = getData->data.control;
     int kitItem = getData->data.kit;
     int engine = getData->data.engine;
 
-    type &= (TOPLEVEL::source::MIDI | TOPLEVEL::source::CLI | TOPLEVEL::source::GUI); // source bits only
+    unsigned char type = 0;
 
     // filter defaults
     int min = 0;

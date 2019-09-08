@@ -23,14 +23,8 @@
 
     This file is derivative of ZynAddSubFX original code.
 
-    Modified April 2019
 */
 
-#include <cstring>
-#include <cmath>
-#include <iostream>
-
-using namespace std;
 
 #include "Params/ADnoteParameters.h"
 #include "Params/SUBnoteParameters.h"
@@ -44,8 +38,20 @@ using namespace std;
 #include "Misc/Microtonal.h"
 #include "Misc/XMLwrapper.h"
 #include "Misc/SynthEngine.h"
+#include "Misc/SynthHelper.h"
+#include "Misc/FileMgrFuncs.h"
+#include "Misc/NumericFuncs.h"
+#include "Misc/FormatFuncs.h"
 #include "Synth/Resonance.h"
 #include "Misc/Part.h"
+
+using synth::velF;
+using file::isRegularFile;
+using file::setExtension;
+using file::findLeafName;
+using func::dB2rap;
+using func::findSplitPoint;
+
 
 Part::Part(Microtonal *microtonal_, FFTwrapper *fft_, SynthEngine *_synth) :
     microtonal(microtonal_),
@@ -127,6 +133,7 @@ void Part::defaults(void)
     Pveloffs = 64;
     Pkeylimit = 20;
     Pfrand = 0;
+    Pvelrand = 0;
     PbreathControl = 2;
     Peffnum = 0;
     legatoFading = 0;
@@ -159,6 +166,7 @@ void Part::defaultsinstrument(void)
     Pkitfade = false;
     Pdrummode = 0;
     Pfrand = 0;
+    Pvelrand = 0;
 
     for (int n = 0; n < NUM_KIT_ITEMS; ++n)
     {
@@ -354,7 +362,15 @@ void Part::NoteOn(int note, int velocity, bool renote)
         }
 
         // compute the velocity offset
-        float vel = velF(velocity / 127.0f, Pvelsns) + (Pveloffs - 64.0f) / 64.0f;
+        float newVel = velocity;
+        if (Pvelrand >= 1)
+        {
+            newVel *= (1 - (synth->numRandom() * Pvelrand * 0.0104f));
+            //std::cout << "Vel rand " << Pvelrand << "  result " << newVel << std::endl;
+        }
+
+
+        float vel = velF(newVel / 127.0f, Pvelsns) + (Pveloffs - 64.0f) / 64.0f;
         vel = (vel < 0.0f) ? 0.0f : vel;
         vel = (vel > 1.0f) ? 1.0f : vel;
 
@@ -955,8 +971,6 @@ void Part::ComputePartSmps(void)
         memset(partfxinputl[nefx], 0, synth->sent_bufferbytes);
         memset(partfxinputr[nefx], 0, synth->sent_bufferbytes);
     }
-    //if (Pvolume < 0.001)
-        //return;
 
     for (k = 0; k < POLIPHONY; ++k)
     {
@@ -1098,6 +1112,8 @@ void Part::checkVolume(float step)
 {
     TransVolume += step;
     volume = dB2rap((TransVolume - 96.0f) / 96.0f * 40.0f);
+    if (volume < 0.01015f) // done to get a smooth cutoff at what was - 40dB
+        volume = 0.0f;
 }
 
 
@@ -1270,6 +1286,7 @@ void Part::add2XML(XMLwrapper *xml, bool subset)
         xml->addpar("legato_mode", (Pkeymode & MIDI_NOT_LEGATO) == PART_LEGATO);
         xml->addpar("key_limit", Pkeylimit);
         xml->addpar("random_detune", Pfrand);
+        xml->addpar("random_velocity", Pvelrand);
         xml->addpar("destination", Paudiodest);
     }
     xml->beginbranch("INSTRUMENT");
@@ -1278,6 +1295,7 @@ void Part::add2XML(XMLwrapper *xml, bool subset)
     {
         xml->addpar("key_mode", Pkeymode & MIDI_NOT_LEGATO);
         xml->addpar("random_detune", Pfrand);
+        xml->addpar("random_velocity", Pvelrand);
         xml->addparbool("breath_disable", PbreathControl != 2);
     }
     xml->endbranch();
@@ -1290,7 +1308,7 @@ void Part::add2XML(XMLwrapper *xml, bool subset)
 
 bool Part::saveXML(string filename, bool yoshiFormat)
 {
-    synth->getRuntime().xmlType = XML_INSTRUMENT;
+    synth->getRuntime().xmlType = TOPLEVEL::XML::Instrument;
     XMLwrapper *xml = new XMLwrapper(synth, yoshiFormat);
     if (!xml)
     {
@@ -1322,7 +1340,7 @@ int Part::loadXMLinstrument(string filename)
 {
     bool hasYoshi = true;
     filename = setExtension(filename, EXTEN::yoshInst);
-    if (!isRegFile(filename))
+    if (!isRegularFile(filename))
     {
         hasYoshi = false;
         filename = setExtension(filename, EXTEN::zynInst);
@@ -1348,7 +1366,7 @@ int Part::loadXMLinstrument(string filename)
     }
     defaultsinstrument();
     PyoshiType = xml->information.yoshiType;
-    Pname = findleafname(filename); // in case there's no internal
+    Pname = findLeafName(filename); // in case there's no internal
     int chk = findSplitPoint(Pname);
     if (chk > 0)
         Pname = Pname.substr(chk + 1, Pname.size() - chk - 1);
@@ -1359,6 +1377,9 @@ int Part::loadXMLinstrument(string filename)
         Pfrand = xml->getpar127("random_detune", Pfrand);
         if (Pfrand > 50)
             Pfrand = 50;
+        Pvelrand = xml->getpar127("random_velocity", Pvelrand);
+        if (Pvelrand > 50)
+            Pvelrand = 50;
         PbreathControl = xml->getparbool("breath_disable", PbreathControl);
         if (PbreathControl)
             PbreathControl = 255; // impossible value
@@ -1507,6 +1528,9 @@ void Part::getfromXML(XMLwrapper *xml)
     Pfrand = xml->getpar127("random_detune", Pfrand);
     if (Pfrand > 50)
         Pfrand = 50;
+    Pvelrand = xml->getpar127("random_velocity", Pvelrand);
+    if (Pvelrand > 50)
+        Pvelrand = 50;
     setDestination(xml->getpar127("destination", Paudiodest));
 
     if (xml->enterbranch("INSTRUMENT"))
@@ -1525,13 +1549,12 @@ void Part::getfromXML(XMLwrapper *xml)
 
 float Part::getLimits(CommandBlock *getData)
 {
-    float value = getData->data.value;
-    unsigned char type = getData->data.type;
-    int request = type & TOPLEVEL::type::Default;
+    float value = getData->data.value.F;
+    int request = int(getData->data.type & TOPLEVEL::type::Default);
     int control = getData->data.control;
     int npart = getData->data.part;
 
-    type &= (TOPLEVEL::source::MIDI | TOPLEVEL::source::CLI | TOPLEVEL::source::GUI); // source bits only
+    unsigned char type = 0;
 
     // part defaults
     int min = 0;
@@ -1637,6 +1660,12 @@ float Part::getLimits(CommandBlock *getData)
             max = 50;
             break;
 
+        case PART::control::humanvelocity:
+            type |= learnable;
+            def = 0;
+            max = 50;
+            break;
+
         case PART::control::drumMode:
             def = 0;
             max = 1;
@@ -1698,6 +1727,8 @@ float Part::getLimits(CommandBlock *getData)
         case PART::control::instrumentComments:
             break;
         case PART::control::instrumentName:
+            break;
+            case PART::control::instrumentType:
             break;
         case PART::control::defaultInstrumentCopyright:
             break;

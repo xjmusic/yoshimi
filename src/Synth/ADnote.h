@@ -27,9 +27,8 @@
 #ifndef AD_NOTE_H
 #define AD_NOTE_H
 
-#include "Misc/SynthHelper.h"
+#include "Params/ADnoteParameters.h"
 #include "Synth/LegatoTypes.h"
-#include "Misc/Float2Int.h"
 
 class ADnoteParameters;
 class Controller;
@@ -45,12 +44,13 @@ class Filter;
 
 class SynthEngine;
 
-class ADnote : private SynthHelper, private Float2Int
+class ADnote
 {
     public:
         ADnote(ADnoteParameters *adpars_, Controller *ctl_, float freq_, float velocity_,
                int portamento_, int midinote_, bool besilent, SynthEngine *_synth);
-        ADnote(ADnote *parent, float freq_, int subVoiceNumber_, float *parentFMmod_);
+        ADnote(ADnote *parent, float freq_, int subVoiceNumber_, float *parentFMmod_,
+               bool forFM_);
         ~ADnote();
 
         void construct();
@@ -89,7 +89,9 @@ class ADnote : private SynthHelper, private Float2Int
         void computeVoiceModulatorLinearInterpolation(int nvoice);
         void normalizeVoiceModulatorFrequencyModulation(int nvoice, int FMmode);
         void computeVoiceModulatorFrequencyModulation(int nvoice, int FMmode);
+        void computeVoiceModulatorForFMFrequencyModulation(int nvoice);
         void computeVoiceOscillatorFrequencyModulation(int nvoice);
+        void computeVoiceOscillatorForFMFrequencyModulation(int nvoice);
             // FMmode = 0 for phase modulation, 1 for Frequency modulation
         //  void ComputeVoiceOscillatorFrequencyModulation(int nvoice);
         void computeVoiceOscillatorPitchModulation(int nvoice);
@@ -245,6 +247,12 @@ class ADnote : private SynthHelper, private Float2Int
         float FMnewamplitude[NUM_VOICES];
 
         float *FMoldsmp[NUM_VOICES]; // used by Frequency Modulation (for integration)
+
+        float *FMFMoldsmpModded[NUM_VOICES]; // use when rendering FM modulator with parent FM
+        float *FMFMoldsmpOrig[NUM_VOICES];
+        float *oscFMoldsmpModded[NUM_VOICES]; // use when rendering oscillator for FM with parent FM
+        float *oscFMoldsmpOrig[NUM_VOICES];
+        bool forFM; // Whether this voice will be used for FM modulation.
 
         float **tmpwave_unison;
         int max_unison;

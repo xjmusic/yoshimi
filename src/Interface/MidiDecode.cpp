@@ -30,20 +30,21 @@
 
 #include "Interface/MidiDecode.h"
 #include "Interface/InterChange.h"
-#include "Misc/MiscFuncs.h"
 #include "Misc/SynthEngine.h"
+#include "Misc/FormatFuncs.h"
+
+using func::asString;
+using func::asHexString;
+
 
 MidiDecode::MidiDecode(SynthEngine *_synth) :
     synth(_synth)
 {
- //init
-
 }
 
 
 MidiDecode::~MidiDecode()
 {
-    //close
 }
 
 
@@ -223,8 +224,9 @@ void MidiDecode::sendMidiCC(bool inSync, unsigned char chan, int type, short int
     //std::cout << "CC buffered" << std::endl;
     CommandBlock putData;
     memset(&putData, 0xff, sizeof(putData));
-    putData.data.value = par;
-    putData.data.type = 0xc8;
+    putData.data.value.F = par;
+    putData.data.type = 0xc0;
+    putData.data.source = TOPLEVEL::action::toAll;
     putData.data.control = 2;
     putData.data.part = TOPLEVEL::section::midiIn;
     putData.data.kit = chan;
@@ -484,6 +486,10 @@ void MidiDecode::nrpnProcessData(unsigned char chan, int type, int par, bool in_
         return;
     }
 
+    if (nHigh == 0x60)
+        if (nrpnProcessHistory(nLow, dHigh, par, in_place))
+            return;
+
     if (nHigh != 64 && nLow < 0x7f)
     {
         synth->getRuntime().Log("Go away NRPN 0x" + asHexString(nHigh) + " " + asHexString(nLow) +" We don't know you!");
@@ -500,6 +506,42 @@ void MidiDecode::nrpnProcessData(unsigned char chan, int type, int par, bool in_
 
     else if (nLow == 2) // system settings
         synth->SetSystemValue(dHigh, par); // *** CHANGE
+}
+
+
+bool MidiDecode::nrpnProcessHistory(unsigned char nLow, unsigned char dHigh, unsigned char dLow, bool in_place)
+{
+    if (nLow > TOPLEVEL::XML::MLearn)
+        return false;
+    if (dLow >= MAX_HISTORY)
+        return true;// not an error but not wanted anyway!
+
+    if (in_place)
+    { // not done yet
+        return true;
+    }
+    CommandBlock putData;
+    memset(&putData, 0xff, sizeof(putData));
+    putData.data.type = TOPLEVEL::type::Integer;
+    putData.data.source = TOPLEVEL::action::fromMIDI;
+    putData.data.control = MAIN::control::loadFileFromList;
+    putData.data.part = TOPLEVEL::section::main;
+    putData.data.kit = nLow;
+    putData.data.engine = dLow;
+    if (nLow == TOPLEVEL::XML::Vector && dHigh < NUM_MIDI_CHANNELS)
+        putData.data.insert = dHigh; // othewise set by file
+    else if (nLow == TOPLEVEL::XML::Instrument)
+    {
+        unsigned char tmp = synth->getRuntime().vectordata.Part;
+        if (dHigh >= NUM_MIDI_PARTS && tmp < NUM_MIDI_PARTS)
+            putData.data.insert = tmp; // last seen by part NRPN
+        else if (dHigh < NUM_MIDI_PARTS)
+            putData.data.insert = dHigh;
+        else
+            return true; // not an error but undefined
+    }
+    synth->interchange.fromMIDI->write(putData.bytes);
+    return true;
 }
 
 
@@ -537,14 +579,14 @@ void MidiDecode::nrpnDirectPart(int dHigh, int par)
             break;
 
         case 4: // Set part's channel number
-            putData.data.value = par;
+            putData.data.value.F = par;
             putData.data.control = 5;
             putData.data.part = synth->getRuntime().vectordata.Part;
             break;
 
         case 5: // Set part's audio destination
             if (par > 0 and par < 4)
-            putData.data.value = par;
+            putData.data.value.F = par;
             putData.data.control = 120;
             putData.data.part = synth->getRuntime().vectordata.Part;
             putData.data.parameter = 192;
@@ -556,7 +598,7 @@ void MidiDecode::nrpnDirectPart(int dHigh, int par)
                 par = MIN_KEY_SHIFT;
             else if (par > MAX_KEY_SHIFT)
                 par = MAX_KEY_SHIFT;
-            putData.data.value = par;
+            putData.data.value.F = par;
             putData.data.control = 35;
             putData.data.part = synth->getRuntime().vectordata.Part;
             break;
@@ -567,8 +609,8 @@ void MidiDecode::nrpnDirectPart(int dHigh, int par)
     if (dHigh < 4)
         return;
     //std::cout << "part " << int(putData.data.part) << "  Chan " << int(par) << std::endl;
-    putData.data.type = 0xd0;
-
+    putData.data.type = 0xc0;
+    putData.data.source = TOPLEVEL::action::toAll;
     synth->midilearn.writeMidi(&putData, false);
 }
 
@@ -619,14 +661,26 @@ void MidiDecode::setMidiBankOrRootDir(unsigned int bank_or_root_num, bool in_pla
             return; // nothing to do!
     }
     else
+    {
         if (bank_or_root_num == synth->getRuntime().currentBank)
             return; // still nothing to do!
+    }
+
+    if (in_place)
+    {
+        if (!setRootDir)
+            synth->setRootBank(UNUSED, bank_or_root_num, false);
+        else
+            synth->setRootBank(bank_or_root_num, UNUSED, false);
+        return;
+    }
 
     CommandBlock putData;
     memset(&putData, 0xff, sizeof(putData));
-    putData.data.value = 0xff;
-    putData.data.type = 0xd0;
-    putData.data.control = 8;
+    putData.data.value.F = 0xff;
+    putData.data.type = 0xc0;
+    putData.data.source = TOPLEVEL::action::toAll;
+    putData.data.control = MIDI::control::bankChange;
     putData.data.part = TOPLEVEL::section::midiIn;
     putData.data.kit = 0;
     putData.data.parameter = 0xc0;
@@ -636,10 +690,7 @@ void MidiDecode::setMidiBankOrRootDir(unsigned int bank_or_root_num, bool in_pla
     else
         putData.data.engine = bank_or_root_num;
 
-    if (in_place)
-        synth->SetRBP(&putData, false);
-    else
-        synth->midilearn.writeMidi(&putData, false);
+    synth->midilearn.writeMidi(&putData, false);
 }
 
 
@@ -653,11 +704,12 @@ void MidiDecode::setMidiProgram(unsigned char ch, int prg, bool in_place)
 
     CommandBlock putData;
     memset(&putData, 0xff, sizeof(putData));
-    putData.data.value = prg;
-    putData.data.type = 0xd0;
-    putData.data.control = 8;
+    putData.data.value.F = prg;
+    putData.data.type = 0xc0;
+    putData.data.source = TOPLEVEL::action::toAll;
+    putData.data.control = MIDI::control::instrument;
     putData.data.part = TOPLEVEL::section::midiIn;
-    putData.data.parameter = 0xc0;
+    //putData.data.parameter = 0xc0;
 
     /*
      * This is a bit slow as we send each part individually
@@ -677,7 +729,7 @@ void MidiDecode::setMidiProgram(unsigned char ch, int prg, bool in_place)
                 if (in_place)
                 {
                     synth->partonoffLock(npart, -1);
-                    synth->SetRBP(&putData, false);
+                    synth->setProgramFromBank(&putData, false);
                 }
                 else
                 {
@@ -693,7 +745,7 @@ void MidiDecode::setMidiProgram(unsigned char ch, int prg, bool in_place)
         if (in_place)
         {
             synth->partonoffLock(ch, -1);
-            synth->SetRBP(&putData, false);
+            synth->setProgramFromBank(&putData, false);
         }
         else
             synth->midilearn.writeMidi(&putData, false);

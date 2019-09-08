@@ -1,7 +1,7 @@
 /*
     MiscGui.h - common link between GUI and synth
 
-    Copyright 2016-2018 Will Godfrey & others
+    Copyright 2016-2019 Will Godfrey & others
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -17,14 +17,12 @@
     yoshimi; if not, write to the Free Software Foundation, Inc., 51 Franklin
     Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-    Modified February 2018
 */
 
 #ifndef MISCGUI_H
 #define MISCGUI_H
 
 #include "Misc/SynthEngine.h"
-#include "Misc/MiscFuncs.h"
 
 enum ValueType {
     VC_plainValue,
@@ -62,6 +60,7 @@ enum ValueType {
     VC_ADDVoiceDelay,
     VC_PitchBend,
     VC_PartVolume,
+    VC_PartHumaniseVelocity,
     VC_PanningRandom,
     VC_PanningStd,
     VC_EnvStretch,
@@ -104,9 +103,9 @@ enum ValueType {
     VC_FXDistHighPass
 };
 
-float collect_readData(SynthEngine *synth, float value, unsigned char control, unsigned char part, unsigned char kititem, unsigned char engine, unsigned char insert, unsigned char parameter, unsigned char par2, unsigned char request = 0xff);
+float collect_readData(SynthEngine *synth, float value, unsigned char control, unsigned char part, unsigned char kititem = 0xff, unsigned char engine = 0xff, unsigned char insert = 0xff, unsigned char parameter = 0xff, unsigned char offset = 0xff, unsigned char miscmsg = 0xff, unsigned char request = 0xff);
 
-void collect_data(SynthEngine *synth, float value, unsigned char type, unsigned char control, unsigned char part, unsigned char kititem = 0xff, unsigned char engine = 0xff, unsigned char insert = 0xff, unsigned char parameter = 0xff, unsigned char par2 = 0xff);
+void collect_data(SynthEngine *synth, float value, unsigned char action, unsigned char type, unsigned char control, unsigned char part, unsigned char kititem = 0xff, unsigned char engine = 0xff, unsigned char insert = 0xff, unsigned char parameter = 0xff, unsigned char offset = 0xff, unsigned char miscmsg = 0xff);
 
 string convert_value(ValueType type, float val);
 
@@ -118,7 +117,7 @@ ValueType getLFOdepthType(int group);
 ValueType getFilterFreqType(int type);
 ValueType getFilterFreqTrackType(int offset);
 
-class GuiUpdates: public MiscFuncs{
+class GuiUpdates {
 
 public:
     void read_updates(SynthEngine *synth);

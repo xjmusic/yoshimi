@@ -43,7 +43,8 @@
 #include "Misc/Config.h"
 #include "Misc/SynthEngine.h"
 #include "MusicIO/MusicClient.h"
-#include "Interface/CmdInterface.h"
+#include "CLI/CmdInterface.h"
+#include "Interface/InterChange.h"
 
 #ifdef GUI_FLTK
     #include "MasterUI.h"
@@ -56,9 +57,7 @@
 
 extern map<SynthEngine *, MusicClient *> synthInstances;
 extern SynthEngine *firstSynth;
-extern int startInstance;
-extern std::string singlePath;
-extern std::string runGui;
+
 
 void mainRegisterAudioPort(SynthEngine *s, int portnum);
 int mainCreateNewInstance(unsigned int forceId, bool loadState);
@@ -240,7 +239,7 @@ static void *mainGuiThread(void *arg)
                     size_t tmpRoot = _synth->ReadBankRoot();
                     size_t tmpBank = _synth->ReadBank();
                     _synth->getRuntime().loadConfig(); // restore old settings
-                    _synth->RootBank(tmpRoot, tmpBank); // but keep current root and bank
+                    _synth->setRootBank(tmpRoot, tmpBank); // but keep current root and bank
                 }
                 _synth->getRuntime().saveConfig();
                 unsigned int instanceID =  _synth->getUniqueId();
@@ -307,7 +306,7 @@ static void *mainGuiThread(void *arg)
         size_t tmpRoot = firstSynth->ReadBankRoot();
         size_t tmpBank = firstSynth->ReadBank();
         firstRuntime->loadConfig(); // restore old settings
-        firstSynth->RootBank(tmpRoot, tmpBank); // but keep current root and bank
+        firstSynth->setRootBank(tmpRoot, tmpBank); // but keep current root and bank
     }
 
     firstRuntime->saveConfig();
@@ -570,7 +569,7 @@ int main(int argc, char *argv[])
         {
             if (pthread_create(&cmdThr, &attr, commandThread, (void *)firstSynth) == 0)
             {
-
+                ;
             }
             pthread_attr_destroy(&attr);
         }

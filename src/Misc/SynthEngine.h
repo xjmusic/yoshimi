@@ -33,33 +33,34 @@
 #include <cstdlib>
 #include <semaphore.h>
 #include <jack/ringbuffer.h>
+#include <string>
+#include <vector>
+#include <list>
 
-using namespace std;
-
-#include "Misc/MiscFuncs.h"
 #include "Misc/RandomGen.h"
-#include "Misc/SynthHelper.h"
 #include "Misc/Microtonal.h"
 #include "Misc/Bank.h"
-#include "Misc/SynthHelper.h"
 #include "Interface/InterChange.h"
 #include "Interface/MidiLearn.h"
 #include "Interface/MidiDecode.h"
-#include "Interface/FileMgr.h"
 #include "Misc/Config.h"
 #include "Params/PresetsStore.h"
 #include "Params/UnifiedPresets.h"
 
-class EffectMgr;
 class Part;
+class EffectMgr;
 class XMLwrapper;
 class Controller;
+class TextMsgBuffer;
 
 #ifdef GUI_FLTK
 class MasterUI;
 #endif
 
-class SynthEngine : private SynthHelper, MiscFuncs, FileMgr
+using std::string;
+
+
+class SynthEngine
 {
     private:
         unsigned int uniqueId;
@@ -74,6 +75,7 @@ class SynthEngine : private SynthHelper, MiscFuncs, FileMgr
     private:
         Config Runtime;
         PresetsStore presetsstore;
+        TextMsgBuffer& textMsgBuffer;
     public:
         SynthEngine(int argc, char **argv, bool _isLV2Plugin = false, unsigned int forceId = 0);
         ~SynthEngine();
@@ -94,7 +96,9 @@ class SynthEngine : private SynthHelper, MiscFuncs, FileMgr
         bool saveBanks(void);
         void newHistory(string name, int group);
         void addHistory(string name, int group);
-        vector<string> *getHistory(int group);
+        std::vector<string> *getHistory(int group);
+        void setHistoryLock(int group, bool status);
+        bool getHistoryLock(int group);
         string lastItemSeen(int group);
         void setLastfileAdded(int group, string name);
         string getLastfileAdded(int group);
@@ -116,8 +120,10 @@ class SynthEngine : private SynthHelper, MiscFuncs, FileMgr
         int RunChannelSwitch(int value);
         void SetController(unsigned char chan, int CCtype, short int par);
         void SetZynControls(bool in_place);
-        int RootBank(int rootnum, int banknum);
-        int SetRBP(CommandBlock *getData, bool notinplace = true);
+        int setRootBank(int root, int bank, bool notinplace = true);
+        int setProgramByName(CommandBlock *getData);
+        int setProgramFromBank(CommandBlock *getData, bool notinplace = true);
+        bool setProgram(string fname, int npart);
         int ReadBankRoot(void);
         int ReadBank(void);
         void SetPartChan(unsigned char npart, unsigned char nchan);
@@ -125,14 +131,15 @@ class SynthEngine : private SynthHelper, MiscFuncs, FileMgr
         bool ReadPartPortamento(int npart);
         void SetPartKeyMode(int npart, int mode);
         int  ReadPartKeyMode(int npart);
-        void cliOutput(list<string>& msg_buf, unsigned int lines);
-        void ListPaths(list<string>& msg_buf);
-        void ListBanks(int rootNum, list<string>& msg_buf);
-        void ListInstruments(int bankNum, list<string>& msg_buf);
-        void ListVectors(list<string>& msg_buf);
-        bool SingleVector(list<string>& msg_buf, int chan);
-        void ListSettings(list<string>& msg_buf);
+        void cliOutput(std::list<string>& msg_buf, unsigned int lines);
+        void ListPaths(std::list<string>& msg_buf);
+        void ListBanks(int rootNum, std::list<string>& msg_buf);
+        void ListInstruments(int bankNum, std::list<string>& msg_buf);
+        void ListVectors(std::list<string>& msg_buf);
+        bool SingleVector(std::list<string>& msg_buf, int chan);
+        void ListSettings(std::list<string>& msg_buf);
         int SetSystemValue(int type, int value);
+        int LoadNumbered(unsigned char group, unsigned char entry);
         bool vectorInit(int dHigh, unsigned char chan, int par);
         void vectorSet(int dHigh, unsigned char chan, int par);
         void ClearNRPNs(void);
@@ -198,6 +205,7 @@ class SynthEngine : private SynthHelper, MiscFuncs, FileMgr
 
         // effects
         unsigned char  syseffnum;
+        bool syseffEnable[NUM_SYS_EFX];
         unsigned char  inseffnum;
         EffectMgr *sysefx[NUM_SYS_EFX]; // system
         EffectMgr *insefx[NUM_INS_EFX]; // insertion

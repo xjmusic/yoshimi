@@ -16,12 +16,13 @@
     You should have received a copy of the GNU General Public License along with
     yoshimi; if not, write to the Free Software Foundation, Inc., 51 Franklin
     Street, Fifth Floor, Boston, MA  02110-1301, USA.
-
-    Modifed May 2019
 */
 
 #ifndef GLOBALS_H
 #define GLOBALS_H
+
+#include <cstdint>
+#include <cstddef>
 
 /*
  * For test purposes where you want guaranteed identical results, enable the
@@ -64,7 +65,7 @@
 // changing them is likely to have unpredicable consequences
 
 // sizes
-const unsigned char COMMAND_SIZE = 80;
+const unsigned char COMMAND_SIZE = 252;
 const unsigned char MAX_HISTORY = 25;
 const int MAX_PRESETS = 1000;
 const unsigned char MAX_PRESET_DIRS = 128;
@@ -108,8 +109,6 @@ const unsigned int EXTOSC_COLOUR = 0x8fbfdf00;
 const unsigned int EXTVOICE_COLOUR = 0x9fdf8f00;
 const unsigned int MODOFF_COLOUR = 0x80808000;
 
-enum {XML_INSTRUMENT = 1, XML_PARAMETERS, XML_MICROTONAL, XML_STATE, XML_VECTOR, XML_MIDILEARN, XML_CONFIG, XML_PRESETS, XML_BANK, XML_HISTORY};
-
 // these were previously (pointlessly) user configurable
 const unsigned char NUM_VOICES = 8;
 const unsigned char POLIPHONY = 80;
@@ -140,6 +139,16 @@ namespace YOSH
  * and new entries can be added between the group ends
  */
 
+
+namespace ENVMODE
+{
+    const unsigned char amplitudeLin = 1;
+    const unsigned char amplitudeLog = 2;
+    const unsigned char frequency = 3;
+    const unsigned char filter = 4;
+    const unsigned char bandwidth = 5;
+}
+
 namespace TOPLEVEL // usage TOPLEVEL::section::vector
 {
     enum section: unsigned char {
@@ -157,56 +166,39 @@ namespace TOPLEVEL // usage TOPLEVEL::section::vector
         config = 248 // F8
     };
 
-    enum route : unsigned char {
-        lowPriority = 128,      // This pair cannot be changed as they
-        adjustAndLoopback = 192 // rely on 'parameter' being < 64
-    };
-
-    // bit-wise type and source share the same byte
-    // but will eventually be split up
     namespace type {
         // bits 0, 1
-        const unsigned char Adjust = 0;
+        const unsigned char Adjust = 0; // return value adjusted within limits
         const unsigned char Read = 0; // i.e. !write
-        const unsigned char Minimum = 1;
-        const unsigned char Maximum = 2;
-        const unsigned char Default = 3;
-        const unsigned char LearnRequest = 3; // shared value
+        const unsigned char Minimum = 1; // return this value
+        const unsigned char Maximum = 2; // return this value
+        const unsigned char Default = 3; // return this value
         // remaining used bit-wise
-        const unsigned char Error = 4; // also identifes static limits
-        const unsigned char Limits = 4; // yes we can pair these - who knew?
-        const unsigned char Write = 64; // false = read
-        const unsigned char Learnable = 64; // shared value
+        const unsigned char Limits = 4;
+        const unsigned char Error = 8;
+        const unsigned char LearnRequest = 16;
+        const unsigned char Learnable = 32;
+        const unsigned char Write = 64;
         const unsigned char Integer = 128; // false = float
     }
 
-    namespace source {
-        // all used bit-wise
-        const unsigned char MIDI = 8;
-        // future - use for type error?
-        const unsigned char CLI = 16;
-        // future - use for type learn request?
-        const unsigned char GUI = 32;
-        // future - use for type learnable?
-        const unsigned char UpdateAfterSet = 48; // so gui can update
-        // future - merge into action?
-    }
-
-    namespace action { // This will become the 'source' byte
+    namespace action {
         // bits 0 to 3
         const unsigned char toAll = 0; // except MIDI
-        const unsigned char fromMIDI = 1; // These will
-        const unsigned char fromCLI = 2;  // replace the
-        const unsigned char fromGUI = 3;  // bits in 'type'
+        const unsigned char fromMIDI = 1;
+        const unsigned char fromCLI = 2;
+        const unsigned char fromGUI = 3;
         const unsigned char noAction = 15; // internal use
         // remaining used bit-wise
-        const unsigned char forceUpdate = 32; // update after set
+        const unsigned char forceUpdate = 32;
+        const unsigned char loop = 64; // internal use
         const unsigned char lowPrio = 128;
         const unsigned char muteAndLoop = 192;
     }
 
     enum control : unsigned char {
-        errorMessage = 254 // FE
+        // insert any new entries here
+        textMessage = 254 // FE
     };
 
     enum muted : unsigned char {
@@ -214,7 +206,8 @@ namespace TOPLEVEL // usage TOPLEVEL::section::vector
         masterReset,
         patchsetLoad,
         vectorLoad,
-        stateLoad
+        stateLoad,
+        listLoad
     };
 
     // inserts are here as they are split between many
@@ -242,15 +235,18 @@ namespace TOPLEVEL // usage TOPLEVEL::section::vector
         bandwidth
     };
 
-    enum historyList : unsigned char {
-        undefined = 0,
-        Instrument, // individual externally sourced Instruments
+    enum XML : unsigned char { // file and history types
+        Instrument = 0, // individual externally sourced Instruments
         Patch, //      full instrument Patch Sets
         Scale, //      complete Microtonal settings
         State, //      entire system State
         Vector, //     per channel Vector settings
         // insert any new lists here
-        MLearn //      learned MIDI CC lists
+        MLearn, //     learned MIDI CC lists
+        Config, // only file types from here onwards
+        Presets,
+        Bank,
+        History,
     };
 }
 
@@ -264,6 +260,7 @@ namespace CONFIG // usage CONFIG::control::oscillatorSize
         XMLcompressionLevel,
         reportsDestination,
         savedInstrumentFormat,
+        showEnginesTypes,
         defaultStateStart = 16,
         hideNonFatalErrors,
         showSplash,
@@ -274,7 +271,8 @@ namespace CONFIG // usage CONFIG::control::oscillatorSize
         enableCLI,
         enableAutoInstance,
         enableSinglePath,
-        exposeStatus,
+        historyLock,
+        exposeStatus, // CLI only
 
         // start of engine controls
         jackMidiSource = 32,
@@ -288,12 +286,13 @@ namespace CONFIG // usage CONFIG::control::oscillatorSize
         alsaPreferredAudio,
         alsaSampleRate,
         // end of engine controls
-
+        addPresetRootDir = 60,
+        removePresetRootDir,
+        currentPresetRoot,
         bankRootCC = 65,
         bankCC = 67,
         enableProgramChange,
-        programChangeEnablesPart,
-        //enableExtendedProgramChange,
+        instChangeEnablesPart,
         extendedProgramChangeCC = 71,
         ignoreResetAllCCs,
         logIncomingCCs,
@@ -307,9 +306,10 @@ namespace BANK // usage BANK::control::
 {
     enum control : unsigned char {
         selectInstrument = 0, // not yet
+        findInstrumentName,
         renameInstrument, // not yet
         saveInstrument, // not yet
-        deleteInstrument, // not yet
+        deleteInstrument,
         selectFirstInstrumentToSwap,
         selectSecondInstrumentAndSwap,
 
@@ -374,6 +374,8 @@ namespace MIDILEARN // usage MIDILEARN::control::block
         ignoreMove,
         deleteLine,
         nrpnDetected,
+        showGUI = 14,
+        hideGUI,
         CCorChannel = 16, // should probably split these
         findSize = 20, // not used yet
         sendLearnMessage, // currently GUI only
@@ -393,7 +395,8 @@ namespace MIDI // usage MIDI::control::noteOn
         noteOn = 0,
         noteOff,
         controller,
-        programChange = 8// also bank and root - split?
+        instrument = 7,
+        bankChange = 8
     };
 // the following are actual MIDI numbers
 // not to be confused with part controls!
@@ -483,10 +486,10 @@ namespace MAIN // usage MAIN::control::volume
         //importInstrument,
         //deleteInstrument,
 
-        setCurrentRootBank = 73,
-        loadInstrument,
+        setCurrentRootBank = 75,
+        loadInstrumentFromBank,
+        loadInstrumentByName,
         saveInstrument,
-        loadNamedInstrument = 78,
         saveNamedInstrument,
         loadNamedPatchset,
         saveNamedPatchset,
@@ -496,6 +499,7 @@ namespace MAIN // usage MAIN::control::volume
         saveNamedScale,
         loadNamedState = 92,
         saveNamedState,
+        loadFileFromList,
         exportPadSynthSamples,
 
         masterReset = 96,
@@ -535,6 +539,7 @@ namespace PART // usage PART::control::volume
         partToSystemEffect3,
         partToSystemEffect4,
         humanise = 48,
+        humanvelocity,
         drumMode = 57,
         kitMode,
         effectNumber = 64,
@@ -586,6 +591,7 @@ namespace PART // usage PART::control::volume
         instrumentCopyright = 220,
         instrumentComments,
         instrumentName,
+        instrumentType,
         defaultInstrumentCopyright, // this needs to be split into two for load/save
         resetAllControllers, // this needs to bump up 1 to make space
         partBusy = 252 // internally generated - read only
@@ -662,7 +668,6 @@ namespace ADDVOICE // usage ADDVOICE::control::volume
 
         modulatorType = 16, // Off, Morph, Ring, PM, FM, PWM
         externalModulator, // -1 local,  'n' voice
-        externalOscillator, // -1 local,  'n' voice
 
         detuneFrequency = 32,
         equalTemperVariation,
@@ -695,8 +700,8 @@ namespace ADDVOICE // usage ADDVOICE::control::volume
         modulatorHFdamping,
         enableModulatorAmplitudeEnvelope = 88,
         modulatorDetuneFrequency = 96,
-        modulatorDetuneFromBaseOsc = 97,
-        modulatorFrequencyAs440Hz = 98,
+        modulatorDetuneFromBaseOsc,
+        modulatorFrequencyAs440Hz,
         modulatorOctave,
         modulatorDetuneType, // Default, L35 cents, L10 cents, E100 cents, E1200 cents
         modulatorCoarseDetune,
@@ -706,9 +711,10 @@ namespace ADDVOICE // usage ADDVOICE::control::volume
 
         delay = 128,
         enableResonance = 130, // for this voice
-        voiceOscillatorPhase = 136,
+        voiceOscillatorPhase = 132,
+        externalOscillator, // -1 local,  'n' voice
         voiceOscillatorSource, // - 1 internal, 'n' external voice
-        soundType // Oscillator, White noise, Pink noise
+        soundType // Oscillator, White noise, Pink noise, Spot noise
     };
 }
 
@@ -860,7 +866,8 @@ namespace RESONANCE // usage RESONANCE::control::maxDb
         interpolatePeaks = 20, // smooth, linear
         protectFundamental,
         clearGraph = 96,
-        smoothGraph
+        smoothGraph,
+        graphPoint
     };
 }
 
@@ -960,13 +967,17 @@ namespace EFFECT // usage EFFECT::type::none
         toEffect3, // system only
         effectNumber,
         effectType,
-        effectDestination // insert only
+        effectDestination, // insert only
+        effectEnable // system only
     };
 }
 
 union CommandBlock{
     struct{
-        float value;
+        union{
+            float F;
+            int32_t I;
+        } value;
         unsigned char type;
         unsigned char source;
         unsigned char control;
@@ -975,7 +986,7 @@ union CommandBlock{
         unsigned char engine;
         unsigned char insert;
         unsigned char parameter;
-        unsigned char par2;
+        unsigned char offset;
         unsigned char miscmsg;
         unsigned char spare1;
         unsigned char spare0;

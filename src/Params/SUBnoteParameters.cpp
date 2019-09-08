@@ -4,7 +4,7 @@
     Original ZynAddSubFX author Nasca Octavian Paul
     Copyright (C) 2002-2005 Nasca Octavian Paul
     Copyright 2009, Alan Calvert
-    Copyright 2017-2018, Will Godfrey
+    Copyright 2017-2019, Will Godfrey
 
     This file is part of yoshimi, which is free software: you can redistribute
     it and/or modify it under the terms of the GNU Library General Public
@@ -21,14 +21,14 @@
     Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
     This file is a derivative of a ZynAddSubFX original.
-    Modified October 2018
+    Modified May 2019
 */
 
 #include "Params/SUBnoteParameters.h"
 
 SUBnoteParameters::SUBnoteParameters(SynthEngine *_synth) : Presets(_synth)
 {
-    setpresettype("SUBnoteParameters");
+    setpresettype("Psubsyth");
     AmpEnvelope = new EnvelopeParams(64, 1, synth);
     AmpEnvelope->ADSRinit_dB(0, 40, 127, 25);
     FreqEnvelope = new EnvelopeParams(64, 0, synth);
@@ -362,13 +362,12 @@ void SUBnoteParameters::getfromXML(XMLwrapper *xml)
 
 float SUBnoteParameters::getLimits(CommandBlock *getData)
 {
-    float value = getData->data.value;
-    unsigned char type = getData->data.type;
-    int request = type & TOPLEVEL::type::Default;
+    float value = getData->data.value.F;
+    int request = int(getData->data.type & TOPLEVEL::type::Default);
     int control = getData->data.control;
     int insert = getData->data.insert;
 
-    type &= (TOPLEVEL::source::MIDI | TOPLEVEL::source::CLI | TOPLEVEL::source::GUI); // source bits only
+    unsigned char type = 0;
 
     // subsynth defaults
     int min = 0;

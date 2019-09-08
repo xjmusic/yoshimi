@@ -1621,13 +1621,12 @@ void OscilGen::getfromXML(XMLwrapper *xml)
 
 float OscilGen::getLimits(CommandBlock *getData)
 {
-    float value = getData->data.value;
-    unsigned char type = getData->data.type;
-    int request = type & TOPLEVEL::type::Default;
+    float value = getData->data.value.F;
+    int request = int(getData->data.type & TOPLEVEL::type::Default);
     int control = getData->data.control;
     int insert = getData->data.insert;
 
-    type &= (TOPLEVEL::source::MIDI || TOPLEVEL::source::CLI || TOPLEVEL::source::GUI); // source bits only
+    unsigned char type = 0;
 
     // oscillator defaults
     int min = 0;

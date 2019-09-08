@@ -23,7 +23,7 @@
     Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
     This file is a derivative of the ZynAddSubFX original.
-    Modified August 2018
+
 */
 
 #ifndef WidgetPDial_h
@@ -34,7 +34,6 @@
 #include <FL/Fl_Menu_Window.H>
 #include "UI/MiscGui.h"
 #include "UI/DynamicTooltip.h"
-#include "Misc/MiscFuncs.h"
 
 /*
   Dial widget with custom drawing and input handling.
