@@ -68,6 +68,8 @@ Part::Part(Microtonal *microtonal_, FFTwrapper *fft_, SynthEngine *_synth) :
     partoutr = (float*)fftwf_malloc(synth->bufferbytes);
     memset(partoutr, 0, synth->bufferbytes);
 
+    partLFO = new LFOParams(50, 40, 0, 0, 0, 0, 0, 0, synth);
+
     for (int n = 0; n < NUM_KIT_ITEMS; ++n)
     {
         kit[n].Pname.clear();
@@ -230,6 +232,8 @@ void Part::cleanup(void)
 Part::~Part()
 {
     cleanup();
+    if (partLFO)
+        delete partLFO;
     for (int n = 0; n < NUM_KIT_ITEMS; ++n)
     {
         if (kit[n].adpars)

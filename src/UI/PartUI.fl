@@ -40,6 +40,7 @@ decl {\#include <FL/fl_ask.H>
 decl {\#include "UI/MiscGui.h"
     \#include "EffUI.h"
     \#include "BankUI.h"
+    \#include "LFOUI.h"
     \#include "ADnoteUI.h"
     \#include "SUBnoteUI.h"
     \#include "PADnoteUI.h"
@@ -2367,6 +2368,7 @@ class PartUI {: {public Fl_Group, PartUI_}
   Function {PartUI(int x,int y, int w, int h, const char *label=0):Fl_Group(x,y,w,h,label)} {} {
     code {//
     part = NULL;
+    lfoui = NULL;
     adnoteui = NULL;
     subnoteui = NULL;
     padnoteui = NULL;
@@ -2764,6 +2766,8 @@ class PartUI {: {public Fl_Group, PartUI_}
   }
   Function {~PartUI()} {} {
     code {//
+    if (lfoui)
+        delete lfoui;
     if (adnoteui)
         delete adnoteui;
     if (subnoteui)
@@ -2799,6 +2803,8 @@ class PartUI {: {public Fl_Group, PartUI_}
   decl {Part *part;} {public local
   }
   decl {BankUI *bankui;} {private local
+  }
+  decl {LFOUI *lfoui;} {public local
   }
   decl {ADnoteUI *adnoteui;} {public local
   }

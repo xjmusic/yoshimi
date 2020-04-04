@@ -30,6 +30,7 @@
 #include <list>
 #include <string>
 #include "globals.h"
+#include "Params/LFOParams.h"
 
 class ADnoteParameters;
 class SUBnoteParameters;
@@ -79,7 +80,7 @@ class Part
         float getLimits(CommandBlock *getData);
 
         Controller *ctl;
-
+        LFOParams     *partLFO;
         // part's kit
         struct {
             std::string   Pname;
