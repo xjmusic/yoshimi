@@ -1012,7 +1012,7 @@ class PartUI {: {public Fl_Group, PartUI_}
     }
     Fl_Window aftertouchcontrol {
       label Aftertouch
-      xywh {1207 59 485 180} type Double hide
+      xywh {1207 59 485 220} type Double hide
       code1 {int X, Y, O; loadWin(synth, X, Y, O, "afterT"); o->position(X, Y); ATSeen = true;}
     } {
       Fl_Box {} {
@@ -1097,13 +1097,13 @@ class PartUI {: {public Fl_Group, PartUI_}
         label Modulation
         callback {//
                 setATchannel(PART::aftertouchType::modulation, o->value());}
-        xywh {25 125 70 15} down_box DOWN_BOX
+        xywh {25 165 70 15} down_box DOWN_BOX
       }
       Fl_Check_Button channelvolume {
         label Volume
         callback {//
                 setATchannel(PART::aftertouchType::volume, o->value());}
-        xywh {25 145 70 15} down_box DOWN_BOX
+        xywh {25 125 70 15} down_box DOWN_BOX
       }
       Fl_Box {} {
         label Key
@@ -1186,7 +1186,7 @@ class PartUI {: {public Fl_Group, PartUI_}
         label Modulation
         callback {//
                 setATkey(PART::aftertouchType::modulation, o->value());}
-        xywh {270 125 70 15} down_box DOWN_BOX
+        xywh {270 165 70 15} down_box DOWN_BOX
       }
       Fl_Button {} {
         label Close
@@ -1194,14 +1194,37 @@ class PartUI {: {public Fl_Group, PartUI_}
         if ((Fl::event_button() == 3))
             ctlwindow->show();
         aftertouchcontrol->hide();}
-        xywh {420 154 50 20} box THIN_UP_BOX
+        xywh {420 164 50 20} box THIN_UP_BOX
       }
       Fl_Box {} {
-        xywh {9 5 228 171} box ENGRAVED_FRAME
+        xywh {9 5 228 141} box ENGRAVED_FRAME
       }
       Fl_Box {} {
-        xywh {241 5 234 143} box ENGRAVED_FRAME
+        xywh {241 5 234 123} box ENGRAVED_FRAME
       }
+      Fl_Group {} {
+        xywh {12 153 384 37} box ENGRAVED_FRAME
+      } {}
+      Fl_Button editAT {
+        label Edit
+        callback {//
+int button = LFOcontrols->visible();
+if (button)
+{
+    LFOcontrols->hide();
+}
+else
+{
+    LFOcontrols->show();
+}
+
+button = !button; // will use this as an enable}
+        xywh {184 162 50 20} box PLASTIC_THIN_UP_BOX color 228
+      }
+      Fl_Group LFOcontrols {
+        label {LFO not done yet}
+        xywh {9 4 466 143} box UP_BOX align 0 hide
+      } {}
     }
     Fl_Window ctlmidi {
       label {MIDI Controls}
