@@ -1012,12 +1012,21 @@ class PartUI {: {public Fl_Group, PartUI_}
     }
     Fl_Window aftertouchcontrol {
       label Aftertouch
-      xywh {1207 59 485 220} type Double hide
+      xywh {804 47 485 200} type Double hide
       code1 {int X, Y, O; loadWin(synth, X, Y, O, "afterT"); o->position(X, Y); ATSeen = true;}
     } {
       Fl_Box {} {
+        xywh {27 68 5 105} box UP_FRAME
+      }
+      Fl_Box {} {
+        xywh {28 169 271 5} box UP_FRAME
+      }
+      Fl_Box {} {
+        xywh {74 10 200 137} box EMBOSSED_FRAME
+      }
+      Fl_Box {} {
         label Channel
-        xywh {95 13 35 17} labelfont 1
+        xywh {142 13 74 17} labelfont 1
       }
       Fl_Button channeloff {
         label Off
@@ -1034,7 +1043,7 @@ class PartUI {: {public Fl_Group, PartUI_}
                 channelmodulation->value(0);
                 channelvolume->value(0);
                 setATchannel(PART::aftertouchType::off, true);}
-        xywh {55 40 48 20}
+        xywh {95 40 40 20}
       }
       Fl_Check_Button channelfiltercutoff {
         label {Filter Cutoff}
@@ -1047,13 +1056,13 @@ class PartUI {: {public Fl_Group, PartUI_}
                     channelfilterCminus->deactivate();
                 }
                 setATchannel(PART::aftertouchType::filterCutoff, o->value());}
-        xywh {25 65 70 15} down_box DOWN_BOX
+        xywh {95 65 70 15} down_box DOWN_BOX
       }
       Fl_Check_Button channelfilterCminus {
         label Down
         callback {//
                 setATchannel(PART::aftertouchType::filterCutoffDown, o->value());}
-        xywh {150 65 70 15} down_box DOWN_BOX deactivate
+        xywh {205 65 70 15} down_box DOWN_BOX deactivate
       }
       Fl_Check_Button channelfilterQ {
         label {Filter Q}
@@ -1066,16 +1075,16 @@ class PartUI {: {public Fl_Group, PartUI_}
                     channelfilterQminus->deactivate();
                 }
                 setATchannel(PART::aftertouchType::filterQ, o->value());}
-        xywh {25 85 70 15} down_box DOWN_BOX
+        xywh {95 85 70 15} down_box DOWN_BOX
       }
       Fl_Check_Button channelfilterQminus {
         label Down
         callback {//
                 setATchannel(PART::aftertouchType::filterQdown, o->value());}
-        xywh {150 85 70 15} down_box DOWN_BOX deactivate
+        xywh {205 85 70 15} down_box DOWN_BOX deactivate
       }
       Fl_Check_Button channelpitchbend {
-        label {Pitch Bend}
+        label Pitch
         callback {//
                 if (o->value())
                     channelpitchBminus->activate();
@@ -1085,29 +1094,32 @@ class PartUI {: {public Fl_Group, PartUI_}
                     channelpitchBminus->deactivate();
                 }
                 setATchannel(PART::aftertouchType::pitchBend, o->value());}
-        xywh {25 105 70 15} down_box DOWN_BOX
+        xywh {95 105 70 15} down_box DOWN_BOX
       }
       Fl_Check_Button channelpitchBminus {
         label Down
         callback {//
                 setATchannel(PART::aftertouchType::pitchBendDown, o->value());}
-        xywh {150 105 70 15} down_box DOWN_BOX deactivate
+        xywh {205 105 70 15} down_box DOWN_BOX deactivate
       }
       Fl_Check_Button channelmodulation {
         label Modulation
         callback {//
                 setATchannel(PART::aftertouchType::modulation, o->value());}
-        xywh {25 165 70 15} down_box DOWN_BOX
+        xywh {95 165 22 15} down_box DOWN_BOX align 1
       }
       Fl_Check_Button channelvolume {
         label Volume
         callback {//
                 setATchannel(PART::aftertouchType::volume, o->value());}
-        xywh {25 125 70 15} down_box DOWN_BOX
+        xywh {95 125 70 15} down_box DOWN_BOX
+      }
+      Fl_Box {} {
+        xywh {273 10 200 116} box EMBOSSED_FRAME
       }
       Fl_Box {} {
         label Key
-        xywh {328 13 35 17} labelfont 1
+        xywh {360 13 31 17} labelfont 1
       }
       Fl_Button polyoff {
         label Off
@@ -1123,10 +1135,10 @@ class PartUI {: {public Fl_Group, PartUI_}
                 polypitchBminus->deactivate();
                 polymodulation->value(0);
                 setATkey(PART::aftertouchType::off, true);}
-        xywh {300 40 48 20}
+        xywh {291 40 40 20}
       }
       Fl_Check_Button polyfiltercutoff {
-        label {Filter Cutoff}
+        label { Filter Cutoff}
         callback {//
                 if (o->value())
                     polyfilterCminus->activate();
@@ -1136,16 +1148,16 @@ class PartUI {: {public Fl_Group, PartUI_}
                     polyfilterCminus->deactivate();
                 }
                 setATkey(PART::aftertouchType::filterCutoff, o->value());}
-        xywh {270 65 70 15} down_box DOWN_BOX
+        xywh {290 65 70 15} down_box DOWN_BOX
       }
       Fl_Check_Button polyfilterCminus {
         label Down
         callback {//
                 setATkey(PART::aftertouchType::filterCutoffDown, o->value());}
-        xywh {395 65 70 15} down_box DOWN_BOX deactivate
+        xywh {405 65 70 15} down_box DOWN_BOX deactivate
       }
       Fl_Check_Button polyfilterQ {
-        label {Filter Q}
+        label { Filter Q}
         callback {//
                 if (o->value())
                     polyfilterQminus->activate();
@@ -1155,16 +1167,16 @@ class PartUI {: {public Fl_Group, PartUI_}
                     polyfilterQminus->deactivate();
                 }
                 setATkey(PART::aftertouchType::filterQ, o->value());}
-        xywh {270 85 70 15} down_box DOWN_BOX
+        xywh {290 85 70 15} down_box DOWN_BOX
       }
       Fl_Check_Button polyfilterQminus {
         label Down
         callback {//
                 setATkey(PART::aftertouchType::filterQdown, o->value());}
-        xywh {395 85 70 15} down_box DOWN_BOX deactivate
+        xywh {405 85 70 15} down_box DOWN_BOX deactivate
       }
       Fl_Check_Button polypitchbend {
-        label {Pitch Bend}
+        label { Pitch }
         callback {//
                 if (o->value())
                     polypitchBminus->activate();
@@ -1174,19 +1186,19 @@ class PartUI {: {public Fl_Group, PartUI_}
                     polypitchBminus->deactivate();
                 }
                 setATkey(PART::aftertouchType::pitchBend, o->value());}
-        xywh {270 105 70 15} down_box DOWN_BOX
+        xywh {290 105 70 15} down_box DOWN_BOX
       }
       Fl_Check_Button polypitchBminus {
         label Down
         callback {//
                 setATkey(PART::aftertouchType::pitchBendDown, o->value());}
-        xywh {395 105 70 15} down_box DOWN_BOX deactivate
+        xywh {405 105 70 15} down_box DOWN_BOX deactivate
       }
       Fl_Check_Button polymodulation {
         label Modulation
         callback {//
                 setATkey(PART::aftertouchType::modulation, o->value());}
-        xywh {270 165 70 15} down_box DOWN_BOX
+        xywh {290 165 23 15} down_box DOWN_BOX align 1
       }
       Fl_Button {} {
         label Close
@@ -1196,15 +1208,6 @@ class PartUI {: {public Fl_Group, PartUI_}
         aftertouchcontrol->hide();}
         xywh {420 164 50 20} box THIN_UP_BOX
       }
-      Fl_Box {} {
-        xywh {9 5 228 141} box ENGRAVED_FRAME
-      }
-      Fl_Box {} {
-        xywh {241 5 234 123} box ENGRAVED_FRAME
-      }
-      Fl_Group {} {
-        xywh {12 153 384 37} box ENGRAVED_FRAME
-      } {}
       Fl_Button editAT {
         label Edit
         callback {//
@@ -1219,11 +1222,27 @@ else
 }
 
 button = !button; // will use this as an enable}
-        xywh {184 162 50 20} box PLASTIC_THIN_UP_BOX color 228
+        xywh {175 162 50 21} box PLASTIC_THIN_UP_BOX color 228
+      }
+      Fl_Check_Button mod2cutoff {
+        label On
+        xywh {20 65 44 15} down_box DOWN_BOX
+      }
+      Fl_Check_Button mod2q {
+        label On
+        xywh {20 85 44 15} down_box DOWN_BOX
+      }
+      Fl_Check_Button mod2pitch {
+        label On
+        xywh {20 105 44 15} down_box DOWN_BOX
+      }
+      Fl_Check_Button mod2volume {
+        label On
+        xywh {20 125 44 15} down_box DOWN_BOX
       }
       Fl_Group LFOcontrols {
         label {LFO not done yet}
-        xywh {9 4 466 143} box UP_BOX align 0 hide
+        xywh {9 4 469 145} box UP_BOX align 0 hide
       } {}
     }
     Fl_Window ctlmidi {
