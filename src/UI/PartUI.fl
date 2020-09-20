@@ -29,10 +29,11 @@ Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 This file is derivative of ZynAddSubFX original code.
 
-} {selected in_source in_header
+} {in_source in_header
 }
 
 decl {\#include <FL/fl_ask.H>
+    \#include <iostream>
     \#include "Misc/Config.h"
     \#include "Misc/SynthEngine.h"} {private global
 }
@@ -44,7 +45,8 @@ decl {\#include "UI/MiscGui.h"
     \#include "SUBnoteUI.h"
     \#include "PADnoteUI.h"
     \#include "UI/WidgetMWSlider.h"
-    \#include "Params/Controller.h"} {public global
+    \#include "UI/YoshiWin.h"
+    \#include "Params/Controller.h"} {selected public global
 }
 
 decl {\#include "Misc/Part.h"
@@ -355,9 +357,10 @@ class PartKitItem {: {public Fl_Group}
   }
 }
 
-class PartUI {: {public Fl_Group, PartUI_}
+class PartUI {open : {public Fl_Group, PartUI_}
 } {
-  Function {make_window()} {} {
+  Function {make_window()} {open
+  } {
     Fl_Window partgroup {
       xywh {1112 270 380 170} type Double box NO_BOX hide
       class Fl_Group
@@ -1164,11 +1167,12 @@ class PartUI {: {public Fl_Group, PartUI_}
       }
     }
     Fl_Window ctlmidi {
-      label {MIDI Controls}
-      xywh {661 261 365 60} type Double hide
+      label {MIDI Controls} open
+      xywh {661 261 365 60} type Double resizable
       code0 {o->copy_label(synth->getGuiMaster()->setPartWindowTitle("MIDI Controls").c_str());}
       code1 {int fetchX, fetchY, fetchO; loadWin(synth, fetchX, fetchY, fetchO, "ctlmidi"); o->position(fetchX, fetchY);}
       code2 {midiSeen = true;}
+      class YoshiWin visible
     } {
       Fl_Dial modulation {
         label Modulation
