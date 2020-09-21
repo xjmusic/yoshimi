@@ -27,7 +27,7 @@
 
 using func::limit;
 
-YoshiWin::YoshiWin(int x,int y, int w, int h, const char *label) : Fl_Window(x,y,w,h,label)
+YoshiWin::YoshiWin(int x,int y, int w, int h, const char *label) : Fl_Double_Window(x,y,w,h,label)
 {
     ;
 }

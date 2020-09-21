@@ -20,12 +20,11 @@
 #ifndef YoshiWin_h
 #define YoshiWin_h
 
-#include <FL/Fl.H>
-#include <FL/Fl_Window.H>
+#include <FL/Fl_Double_Window.H>
 #include "UI/MiscGui.h"
 
 
-class YoshiWin : public Fl_Window {
+class YoshiWin : public Fl_Double_Window {
  public:
   YoshiWin(int x,int y, int w, int h, const char *label=0);
   ~YoshiWin();
