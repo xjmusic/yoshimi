@@ -41,9 +41,6 @@ YoshiWin::~YoshiWin()
 
 void YoshiWin::resize(int x, int y, int w, int h)
 {
-    std::cout << "resizing x" << x << "  y" << y << "  w " << w << "  h " << h << std::endl;
-    this->x(x);
-    this->y(y);
-    this->w(w);
-    this->h(h);
+  Fl_Double_Window::resize(x, y, w, h);
+  std::cout << "Resized: x" << x << "  y" << y << "  w " << w << "  h " << h << std::endl;
 }
