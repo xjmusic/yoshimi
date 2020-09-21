@@ -25,6 +25,8 @@
 #include <FL/fl_draw.H>
 #include <FL/x.H>
 
+#include <FL/Fl.H>
+
 using func::limit;
 
 YoshiWin::YoshiWin(int x,int y, int w, int h, const char *label) : Fl_Double_Window(x,y,w,h,label)
@@ -38,9 +40,17 @@ YoshiWin::~YoshiWin()
     ;
 }
 
+void a_function(void* blah) {
+
+  printf("Timeout expired!\n");
+
+}
 
 void YoshiWin::resize(int x, int y, int w, int h)
 {
   Fl_Double_Window::resize(x, y, w, h);
   std::cout << "Resized: x" << x << "  y" << y << "  w " << w << "  h " << h << std::endl;
+
+  Fl::remove_timeout(a_function, NULL);
+  Fl::add_timeout(0.5, a_function, NULL);
 }
