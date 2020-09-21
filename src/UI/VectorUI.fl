@@ -17,7 +17,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with yoshimi.  If not, see <http://www.gnu.org/licenses/>.
 
-} {selected in_source in_header
+} {in_source in_header
 }
 
 decl {using namespace std;} {public local
@@ -29,7 +29,8 @@ decl {\#include "MasterUI.h"} {private global
 decl {\#include "Misc/SynthEngine.h"} {public global
 }
 
-decl {\#include "UI/MiscGui.h"} {public local
+decl {\#include "UI/YoshiWin.h"
+      \#include "UI/MiscGui.h"} {public local
 }
 
 decl {\#include "BankUI.h"} {public local
@@ -57,13 +58,19 @@ decl {\#include "Misc/TextMsgBuffer.h"
     }} {private local
 }
 
-class VectorUI {} {
-  Function {make_window(void)} {} {
+class VectorUI {open
+} {
+  Function {make_window(void)} {open
+  } {
     Fl_Window vectorwindow {
       label {Yoshimi : Vectors}
       callback {//
-      o->hide()}
-      xywh {245 162 375 295} type Double labelfont 13 labelsize 12 align 0 hide
+          if (Fl::event() == 10)
+              o->hide();
+          else
+              std::cout << "In vector" << std::endl;} selected
+      xywh {245 162 375 295} type Double labelfont 13 labelsize 12 align 0 resizable
+      class YoshiWin visible
     } {
       Fl_Spinner setbasechan {
         label {Base Channel}
@@ -647,7 +654,7 @@ class VectorUI {} {
   }
   Function {~VectorUI()} {} {
     code {//
-    saveWin(synth, vectorwindow->x(), vectorwindow->y(), vectorwindow->visible(), "vector");  
+    saveWin(synth, vectorwindow->x(), vectorwindow->y(), vectorwindow->visible(), "vector");
     vectorwindow->hide();
     delete  vectorwindow;} {}
   }

@@ -46,7 +46,7 @@ decl {\#include "UI/MiscGui.h"
     \#include "PADnoteUI.h"
     \#include "UI/WidgetMWSlider.h"
     \#include "UI/YoshiWin.h"
-    \#include "Params/Controller.h"} {selected public global
+    \#include "Params/Controller.h"} {public global
 }
 
 decl {\#include "Misc/Part.h"
@@ -1167,7 +1167,12 @@ class PartUI {open : {public Fl_Group, PartUI_}
       }
     }
     Fl_Window ctlmidi {
-      label {MIDI Controls} open
+      label {MIDI Controls}
+      callback {//
+        if (Fl::event() == 10)
+            o->hide();
+        else
+            std::cout << "In ctlmidi " << std::endl;} open selected
       xywh {661 261 365 60} type Double resizable
       code0 {o->copy_label(synth->getGuiMaster()->setPartWindowTitle("MIDI Controls").c_str());}
       code1 {int fetchX, fetchY, fetchO; loadWin(synth, fetchX, fetchY, fetchO, "ctlmidi"); o->position(fetchX, fetchY);}
